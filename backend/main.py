@@ -86,14 +86,24 @@ async def refresh(plugin) -> None:
             )
 
 
+RUNNING: dict[str, asyncio.Task] = {}
+
+
 async def runner() -> None:
-    """Honor each plugin's TTL. Checks every 30 seconds."""
+    """Honor each plugin's TTL. Checks every 30 seconds.
+
+    Each refresh runs as its own task, so a slow source (Overpass can take over a minute)
+    does not hold up the fast ones. A plugin that is still running is not started twice.
+    """
     while True:
         with db() as c:
             state = {r["name"]: r["fetched_at"] for r in c.execute("SELECT name, fetched_at FROM plugin_state")}
-        due = [p for p in PLUGINS if time.time() - (state.get(p.name) or 0) >= p.cache_ttl_seconds]
-        if due:
-            await asyncio.gather(*(refresh(p) for p in due))
+        for p in PLUGINS:
+            due = time.time() - (state.get(p.name) or 0) >= p.cache_ttl_seconds
+            if due and p.name not in RUNNING:
+                task = asyncio.create_task(refresh(p))
+                RUNNING[p.name] = task
+                task.add_done_callback(lambda _t, name=p.name: RUNNING.pop(name, None))
         await asyncio.sleep(30)
 
 
