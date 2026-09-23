@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/travel-info?iso2=`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -71,6 +71,21 @@ Things that will bite you if you touch this:
 - **Sub-regions are separate advisories.** Gaza and the West Bank are tagged as Israel in the feed, and taking the highest level per tag would paint all of Israel Level 4, so they are matched by name and shown on the Palestine polygon. Israel stays at its own level. Hong Kong, Macau and a few Caribbean territories get the same treatment. Anything that cannot be placed is skipped and logged, never guessed.
 - **Polygons are Natural Earth 50m**, rounded to about 1 km. They are coarser than the basemap borders, so the tint fades out as you zoom in past zoom 5. Natural Earth's disputed-border choices are Natural Earth's.
 
+### About vaccines and entry requirements
+
+Open any country card or embassy popup and press "Vaccines and entry requirements". It fetches that one country and shows two things.
+
+**Entry for US citizens**: the visa requirement, the allowed stay and the notes (an eVisa, a 90 day limit, a note that Cuba tourism is prohibited under US law). Source is Wikipedia's "Visa requirements for United States citizens", credited with its licence (CC BY-SA 4.0) and the revision it was read from. I used it because the State Department's own country pages return 403 to anything but a browser, and working around that quietly is not something to do. It is crowd-edited, so it is a starting point and the destination's embassy decides. Passport validity rules (often six months beyond your stay) are usually not in the table, the popup says so.
+
+**Health (CDC)**: the CDC's Travelers' Health page for that destination. The yellow fever entry requirement gets its own box, since it is the one that can stop you at a border, then the CDC's current travel health notices, then every vaccine and medicine as an expandable row with the CDC's own text. The tag beside each (Recommended, Consider, Not recommended, Depends on your trip) is read from the first line of each paragraph. When paragraphs disagree, for example Japanese encephalitis is recommended for some travelers, consider for others and not recommended for the rest, it says "Depends on your trip", never whichever line came first. The tags are a scanning aid, the CDC text is always one click away and nothing is paraphrased.
+
+How it behaves, and why:
+- **On demand, cached for a week.** Nothing is crawled on a schedule. There are 244 CDC destination pages at about 400 KB each and I have already been rate limited once by another agency doing less. Requests to the CDC are at least 3 seconds apart, a 403 or 429 stops and is not retried in a loop, and a failure is remembered for 15 minutes so a broken source is retried soon but not hammered. Wikipedia's whole table is one request.
+- **Country names are matched exactly, never fuzzily.** Both sources name countries in prose, and a wrong match would show one country's health advice on another. Names are normalised and matched against pycountry, Natural Earth and a short alias table (`backend/facts/names.py`). Checked by hand against the ambiguous ones: Georgia, Niger and Nigeria, both Congos, the Guineas, both Sudans, both Koreas. Anything unmatched has no result and says so. Regions such as Sudan - Darfur or Crimea are skipped on purpose.
+- **A layout change fails loudly.** If the CDC page structure changes, or Wikipedia's table parses to fewer than 100 countries, the provider reports an error instead of showing a half-empty result as truth.
+- **The CDC covers Israel, the West Bank and Gaza on one page**, so Palestine shows the same page as Israel.
+- Adding another fact source (WHO, a country's own rules) is one file in `backend/facts/` with an async `fetch(iso2)`, registered in `backend/facts/__init__.py`.
+
 ### About the embassy stars
 
 Every operating US embassy is a gold star. Click one for the address, phone numbers, the embassy website and the State Department's 24/7 lines (+1 202-501-4444 from abroad, 1-888-407-4747 from the US or Canada). The card at the top of the sidebar shows the nearest operating embassy to the middle of the map. That distance is straight-line, not a route, so a river, a border or a closed road can make the real trip much longer.
@@ -89,8 +104,9 @@ Where it comes from and what to distrust:
 - [x] State Dept advisories: level tint, country card, red banner at Level 3 and 4
 - [ ] Advisories: place Gaza, West Bank and other sub-regions as their own areas, and add State Dept Alerts (the separate alert feed), plus UK FCDO as a second opinion
 - [ ] Trans traveler safety: Equaldex legal framework plus curated social climate notes, no single score
-- [ ] Vaccine and entry requirements per country (CDC Travelers' Health, WHO)
-- [ ] Health and outbreak alerts (WHO Disease Outbreak News, CDC travel notices)
+- [x] Vaccine and entry requirements per country (CDC Travelers' Health, Wikipedia visa table)
+- [ ] Entry: passport validity and blank pages from a sourced dataset, and the State Department's country pages if a permitted route exists
+- [ ] Health and outbreak alerts as a map layer (CDC notices are already listed per country in the card, the RSS feed and WHO Disease Outbreak News would put them on the globe)
 - [ ] Elections calendar (IFES ElectionGuide, Wikidata, hand-curated overrides), flag anything inside 30 days
 - [ ] Currency and dollar strength per country (Frankfurter/ECB), 30 and 90 day trend
 - [ ] Trip view: save destinations and dates, get a one-screen briefing per stop with warnings sorted to the top
@@ -112,4 +128,5 @@ Safety information about people is subjective and uneven. City and countryside c
 - US county boundaries: US Census cartographic boundaries via [us-atlas](https://github.com/topojson/us-atlas) (ISC licence), decoded with topojson-client (ISC). Both are vendored in `frontend/vendor/`.
 - Country polygons: [Natural Earth](https://www.naturalearthdata.com) (public domain), simplified by `scripts/build_country_data.py`.
 - Travel advisories: US Department of State, travel.state.gov.
+- Vaccines and health notices: CDC Travelers' Health (wwwnc.cdc.gov/travel). Entry rules: Wikipedia contributors, CC BY-SA 4.0. Country name matching: pycountry.
 - Earthquakes: USGS. Disasters: GDACS. Unrest: the GDELT Project. Embassies: OpenStreetMap contributors (ODbL) via Overpass.

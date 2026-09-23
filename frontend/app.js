@@ -138,6 +138,7 @@ async function addAdvisoryLayer() {
       const a = hit && state.advisories[hit.properties.iso2];
       if (!a) return;
       popup.setLngLat(e.lngLat).setHTML(advisoryPopup(a)).addTo(map);
+      wireTravel(popup);
       popup.sitrepId = a.id;
       keepPopupInView(popup);
     });
@@ -152,6 +153,80 @@ async function addAdvisoryLayer() {
 function advisoryBanner(a) {
   const loud = a.level >= 3;
   return `<div class="adv-banner adv-${a.level}">${loud ? '⚠ ' : ''}${esc(LEVEL_NAME[a.level].toUpperCase())} · LEVEL ${a.level}</div>`;
+}
+
+// Vaccines, health notices and entry rules for a country. Fetched when you ask, the server caches it.
+const ENTRY_LABEL = {
+  visa_free: 'ok', on_arrival: 'maybe', electronic: 'maybe', on_arrival_or_electronic: 'maybe',
+  visa_required: 'warn', permit: 'bad', restricted: 'bad', other: 'plain',
+};
+const STANCE_LABEL = {
+  recommended: 'Recommended', consider: 'Consider', varies: 'Depends on your trip',
+  not_recommended: 'Not recommended', routine: 'Routine', info: 'Read CDC text',
+};
+const STANCE_ORDER = ['recommended', 'varies', 'consider', 'info', 'routine', 'not_recommended'];
+
+function renderTravel(t) {
+  const when = (ts) => (ts ? new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+  let html = '';
+
+  const e = t.entry;
+  html += '<div class="pop-sub">Entry for US citizens</div>';
+  if (e.ok) {
+    html += `<div class="entry entry-${ENTRY_LABEL[e.category] || 'plain'}"><b>${esc(e.requirement)}</b>${e.allowed_stay ? ' · ' + esc(e.allowed_stay) : ''}</div>
+      ${e.notes ? `<div class="pop-note">${esc(e.notes)}</div>` : ''}
+      <div class="pop-note">Passport validity rules vary, often six months beyond your stay, and this table rarely says. Confirm with the destination's embassy.
+        Source: <a href="${esc(safeUrl(e.source_url))}" target="_blank" rel="noopener noreferrer">Wikipedia</a> (${esc(e.license)}), revision ${esc(e.revid)}.</div>`;
+  } else {
+    html += `<div class="pop-note stale">Entry rules unavailable: ${esc(e.error)}</div>`;
+  }
+
+  const h = t.health;
+  html += '<div class="pop-sub">Health (CDC)</div>';
+  if (!h.ok) return html + `<div class="pop-note stale">Health information unavailable: ${esc(h.error)}</div>`;
+
+  if (h.yellow_fever) {
+    html += `<div class="yf"><b>Yellow fever</b>
+      <div><span>CDC</span> ${esc(h.yellow_fever.cdc)}</div>
+      <div><span>Entry requirement</span> ${esc(h.yellow_fever.entry)}</div></div>`;
+  }
+  for (const n of h.notices || []) {
+    html += `<div class="hnotice hn-${n.level}"><a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener noreferrer">Level ${n.level}: ${esc(n.title)}</a>
+      <span class="pop-meta">${esc(n.date)}</span></div>`;
+  }
+  const vaccines = [...h.vaccines].sort((a, b) => STANCE_ORDER.indexOf(a.stance) - STANCE_ORDER.indexOf(b.stance));
+  html += '<div class="vax">' + vaccines.map((v) => `<details class="vax-${v.stance}">
+      <summary>${esc(v.name)} <span class="chip chip-${v.stance}">${esc(STANCE_LABEL[v.stance] || v.stance)}</span></summary>
+      <div class="vax-text">${esc(v.text)}</div>
+      ${v.url ? `<a href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener noreferrer">CDC disease page</a>` : ''}
+    </details>`).join('') + '</div>';
+  html += `<div class="pop-note">The tags summarize the first line of the CDC's text, and conditions often apply, so open a vaccine to read all of it.
+    See a doctor or travel clinic at least a month before you go. Source:
+    <a href="${esc(safeUrl(h.source_url))}" target="_blank" rel="noopener noreferrer">CDC Travelers' Health</a>, fetched ${esc(when(h.fetched_at))}.</div>`;
+  return html;
+}
+
+function travelSectionHtml(iso2) {
+  return iso2 ? `<div class="pop-travel" data-iso="${esc(iso2)}"><button type="button" class="linkish">Vaccines and entry requirements</button></div>` : '';
+}
+
+// Attach the button in the open popup. The request is made only when it is clicked.
+function wireTravel(popupObj) {
+  const box = popupObj.getElement()?.querySelector('.pop-travel');
+  if (!box) return;
+  box.querySelector('button').addEventListener('click', async () => {
+    const iso2 = box.dataset.iso;
+    box.innerHTML = '<div class="pop-note">Loading, the first look-up for a country can take a few seconds...</div>';
+    try {
+      const res = await fetch('/api/travel-info?iso2=' + encodeURIComponent(iso2));
+      if (!res.ok) throw new Error(res.status);
+      box.innerHTML = renderTravel(await res.json());
+    } catch (err) {
+      box.innerHTML = '<div class="pop-note stale">Could not load this. Try again in a moment.</div>';
+    }
+    box.scrollIntoView({ block: 'start', behavior: 'smooth' });  // the section is far down a long popup
+    keepPopupInView(popupObj);
+  });
 }
 
 // The State Dept's own sentence about embassy staffing or suspension, quoted. We do not turn it into a status.
@@ -186,6 +261,7 @@ function advisoryPopup(a) {
     ${others}
     ${embassyNoticeHtml(a)}
     ${staleNoticeHtml(a)}
+    ${travelSectionHtml(a.iso2)}
     <div class="pop-note">US State Department${date ? ', updated ' + esc(date) : ''} ·
       <a href="${esc(safeUrl(a.source_url))}" target="_blank" rel="noopener noreferrer">read the full advisory</a></div>`;
 }
@@ -205,6 +281,7 @@ function refreshAdvisoryCard() {
     ${advisoryBanner(a)}`;
   box.onclick = () => {
     popup.setLngLat(map.getCenter()).setHTML(advisoryPopup(a)).addTo(map);
+    wireTravel(popup);
     popup.sitrepId = a.id;
     keepPopupInView(popup);
   };
@@ -284,6 +361,7 @@ function addFeatureLayers() {
     // MapLibre flattens list properties (phones) to strings, so use our own copy of the feature.
     const full = state.byId.get(f.properties.id)?.properties || f.properties;
     popup.setLngLat(f.geometry.coordinates).setHTML(embassyPopup(full)).addTo(map);
+    wireTravel(popup);
     popup.sitrepId = f.properties.id;
     keepPopupInView(popup);
   });
@@ -317,12 +395,18 @@ function countryName(iso2) {
   try { return iso2 ? regionNames.of(iso2) : ''; } catch { return iso2 || ''; }
 }
 
-// A popup grows upward when the summary loads and can end up above the map edge. Nudge the map down.
+// A popup grows when its content loads and can run off the top or bottom of the map. Nudge the map so
+// the whole popup is on screen, without pushing the top edge out to fix the bottom.
 function keepPopupInView(popup) {
   const pr = popup.getElement()?.getBoundingClientRect();
   if (!pr) return;
-  const over = map.getContainer().getBoundingClientRect().top + 8 - pr.top;
-  if (over > 0) map.panBy([0, -over], { duration: 300 });
+  const mr = map.getContainer().getBoundingClientRect();
+  const top = mr.top + 8, bottom = mr.bottom - 8;
+  if (pr.top < top) {
+    map.panBy([0, -(top - pr.top)], { duration: 300 });                 // popup is above the edge, move it down
+  } else if (pr.bottom > bottom) {
+    map.panBy([0, Math.min(pr.bottom - bottom, pr.top - top)], { duration: 300 });  // below the edge, move it up
+  }
 }
 
 const telHref = (n) => 'tel:' + String(n).replace(/[^\d+]/g, '');
@@ -380,6 +464,7 @@ function embassyPopup(p) {
     <div class="pop-row"><b>Address</b> ${p.address ? esc(p.address) : 'not in the map data'}</div>
     <div class="pop-row"><b>Phone</b> ${phones.length ? phones.map(telLink).join(', ') : 'not in the map data'}${site ? ' · ' + site : ''}</div>
     <div class="pop-row"><b>State Dept, 24/7</b> ${telLink(OCS_ABROAD)} from abroad, ${telLink(OCS_US)} from the US or Canada</div>
+    ${travelSectionHtml(p.iso2)}
     <div class="pop-note">Details come from OpenStreetMap and are not checked live. Confirm on the embassy website or travel.state.gov before you rely on them.</div>`;
 }
 
