@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/airspace`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -28,7 +28,7 @@ Drop a file in `backend/plugins/` with a class named `Plugin` that extends `Sitr
 
 ## Status
 
-Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest (civil) and conflict (military), US embassies, State Department travel advisories.
+Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest (civil) and conflict (military), US embassies, State Department travel advisories, EASA airspace bulletins.
 
 ### About the Unrest and Conflict layers
 
@@ -100,6 +100,22 @@ Equaldex's terms, which the code is built around: credit and link Equaldex where
 
 The map layer is a country tint like the advisories, so turning one on hides the other and turning it off brings them back.
 
+### About the airspace layer
+
+EASA, the European aviation regulator, issues Conflict Zone Information Bulletins (CZIBs) when the airspace over somewhere becomes dangerous for civil aircraft, and tells airlines what to do about it. Countries under an active bulletin get a dashed outline, magenta where airlines are advised not to operate and light blue where they are advised to take caution, with a thinner dotted outline when a bulletin covers only part of a country (Pakistan's Baluchistan and Khyber Pakhtunkhwa, Yemen's Sana'a region). Click the country for the bulletin: EASA's recommendations quoted as written, the full text, the revision history, and the earlier bulletins for that place, which reads as a timeline (for Iran, five since 2020).
+
+Why it is worth having: a new or revised bulletin means EASA's assessment of the risk just changed. Popups tag a bulletin **NEW** if it was issued in the last 30 days and **REVISED n DAYS AGO** if it was revised in that time. Right now the five Middle East bulletins (Jordan, the Gulf states, Lebanon, Iraq, Iran) were all revised on 31 August, and that is the thing to notice.
+
+What it is not: a prediction. It is a signal about risk **to aircraft**, not to people on the ground, and several bulletins are long-running (Afghanistan since 2017, Ukraine since 2022). EASA's own disclaimer says its pages are "not necessarily comprehensive, complete, accurate or up to date". Reproduction is authorised with the source acknowledged, which the legend and every popup do.
+
+How it works, and what to know before changing it (`backend/plugins/easa_czib.py`):
+- The list page is read every 6 hours (one request). A bulletin's own page (about 290 KB) is fetched only when it is new or its revision date changed, then kept in `data/easa_czib.json`. The first run reads about 15 pages three seconds apart, after that almost nothing.
+- Affected countries come from the bulletin's own explicit "Affected Countries" list, matched exactly, so a regional bulletin ("the Persian Gulf and Gulf of Oman") never needs a guess about which countries it covers.
+- **"Do not operate" versus "caution" is read from the recommendation text, and my first pattern got Sudan wrong.** Sudan's bulletin says EASA "recommends not to fly", the pattern only knew "not operate", and a do-not-fly bulletin was labelled caution. It now covers operate, fly and overfly, with regression tests for the wordings seen, including "does not recommend cancelling flights", which must stay caution. If EASA changes its phrasing, check this first. The quoted text is always shown, so a wrong label is visible next to the words.
+- A bulletin that partly restricts (Lebanon: not operate, except to and from Beirut under conditions) is labelled do not operate and the exception is in the quoted text.
+- If the feed is unreachable the saved copy is served and carries an `as_of` time, the popup warns after 24 hours.
+- Earlier bulletins are matched by shared country or a shared region phrase in the title ("Persian Gulf"), using only the titles' own words.
+
 ### About the embassy stars
 
 Every operating US embassy is a gold star. Click one for the address, phone numbers, the embassy website and the State Department's 24/7 lines (+1 202-501-4444 from abroad, 1-888-407-4747 from the US or Canada). The card at the top of the sidebar shows the nearest operating embassy to the middle of the map. That distance is straight-line, not a route, so a river, a border or a closed road can make the real trip much longer.
@@ -125,7 +141,8 @@ Where it comes from and what to distrust:
 - [ ] Elections calendar (IFES ElectionGuide, Wikidata, hand-curated overrides), flag anything inside 30 days
 - [ ] Currency and dollar strength per country (Frankfurter/ECB), 30 and 90 day trend
 - [ ] Trip view: save destinations and dates, get a one-screen briefing per stop with warnings sorted to the top
-- [ ] Airspace early warning: EASA Conflict Zone Information Bulletins as a layer (dated, official, structured, active now for Jordan, Lebanon, Iraq, Iran, the Persian Gulf, Russia and Sudan). Flag anything issued or revised in the last 30 days. A signal, not a prediction, bulletins also reflect long-running conflicts
+- [x] Airspace early warning: EASA Conflict Zone Information Bulletins as a layer, with NEW and REVISED tags and the history of earlier bulletins
+- [ ] Airspace: notify me when a new bulletin appears or one is revised (a trip alert, once trips exist)
 - [ ] Live aircraft and short flight trails from adsb.lol or OpenSky (free, no key). Caveat: community receivers, so no military traffic and thin coverage over conflict zones and oceans
 - [ ] Airspace emptiness: compare live traffic over a region with our own rolling baseline to spot airlines rerouting. Needs days of samples first, and cannot tell a closure from missing receivers, so treat as the weakest signal
 - [ ] Airport delays and ground stops (FAA NAS status). Not available without registration: FAA NOTAMs. Blocked to non-browsers (403): the FAA prohibitions page
@@ -146,6 +163,7 @@ Safety information about people is subjective and uneven. City and countryside c
 - US county boundaries: US Census cartographic boundaries via [us-atlas](https://github.com/topojson/us-atlas) (ISC licence), decoded with topojson-client (ISC). Both are vendored in `frontend/vendor/`.
 - Country polygons: [Natural Earth](https://www.naturalearthdata.com) (public domain), simplified by `scripts/build_country_data.py`.
 - Travel advisories: US Department of State, travel.state.gov.
+- Airspace bulletins: European Union Aviation Safety Agency (EASA), easa.europa.eu, reproduced with the source acknowledged.
 - LGBT+ Equality Index: Equaldex (equaldex.com), used under its non-commercial API terms. Advice text: UK Foreign, Commonwealth and Development Office, Open Government Licence v3.0.
 - Vaccines and health notices: CDC Travelers' Health (wwwnc.cdc.gov/travel). Entry rules: Wikipedia contributors, CC BY-SA 4.0. Country name matching: pycountry.
 - Earthquakes: USGS. Disasters: GDACS. Unrest: the GDELT Project. Embassies: OpenStreetMap contributors (ODbL) via Overpass.

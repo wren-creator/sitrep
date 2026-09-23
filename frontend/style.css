@@ -110,7 +110,8 @@ main { display: flex; height: calc(100% - 55px); }
 
 /* LGBT+ safety */
 main { position: relative; }
-#legend { position: absolute; left: 12px; bottom: 44px; width: 260px; z-index: 5; background: rgba(18,24,33,.94); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+#legends { position: absolute; left: 12px; bottom: 44px; width: 260px; z-index: 5; display: flex; flex-direction: column; gap: 8px; }
+.legend-box { background: rgba(18,24,33,.94); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .lg-legend-title { font-weight: 600; font-size: 12.5px; margin-bottom: 5px; }
 .lg-legend-bar { display: flex; border-radius: 4px; overflow: hidden; }
 .lg-legend-bar span { flex: 1; text-align: center; font-size: 10.5px; color: #0b0f14; padding: 3px 0; font-weight: 600; }
@@ -124,3 +125,20 @@ main { position: relative; }
 .lg-fill { height: 100%; } .lg-low { background: #ff4d4d; } .lg-mid { background: #f2c14e; } .lg-high { background: #4fd08a; }
 .fcdo { font-size: 12.5px; border-left: 3px solid #4aa3ff; padding-left: 9px; margin: 6px 0; }
 .fcdo p { margin: 0 0 6px; } .fc-li { margin: 0 0 4px 6px; }
+
+/* EASA airspace bulletins */
+.airspace { border-left: 3px solid #e040fb; background: #1a1220; border-radius: 4px; padding: 6px 8px; margin: 6px 0; font-size: 12.5px; }
+.airspace.air-caution { border-left-color: #7dd3fc; background: #101c26; }
+.air-head { font-weight: 700; font-size: 11.5px; letter-spacing: .4px; color: #f0abfc; }
+.air-caution .air-head { color: #7dd3fc; }
+.air-tag { background: #e040fb; color: #12061a; border-radius: 3px; padding: 1px 5px; margin-left: 4px; font-size: 10.5px; }
+.air-caution .air-tag { background: #7dd3fc; color: #06202e; }
+.air-rec { margin: 4px 0; color: var(--text); font-style: italic; }
+.air-desc { white-space: pre-line; font-size: 12px; margin: 4px 0; }
+.air-more summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.air-hist { margin: 3px 0; font-size: 12px; } .air-hist a { color: #8fc1ff; }
+.air-card { margin-top: 5px; padding: 4px 8px; border-radius: 5px; font-size: 11.5px; font-weight: 600; background: #1a1220; color: #f0abfc; border: 1px solid #5b2a66; }
+.air-card.air-caution { background: #101c26; color: #7dd3fc; border-color: #2a5a70; }
+.air-key { display: flex; align-items: center; gap: 8px; font-size: 11.5px; margin: 3px 0; }
+.air-key span { width: 26px; border-top: 3px dashed; }
+.air-key span.dotted { border-top-style: dotted; }

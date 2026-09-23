@@ -1,8 +1,8 @@
-const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories', lgbt: 'LGBT+ index' };
+const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories', lgbt: 'LGBT+ index', airspace: '✈ Airspace' };
 const SEV_COLOR = { low: '#4aa3ff', medium: '#f2c14e', high: '#ff8a3d', critical: '#ff4d4d' };
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
 
-const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set(['lgbt']), advisories: {}, lgbtIndex: null };
+const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set(['lgbt']), advisories: {}, lgbtIndex: null, airspace: { items: [], byIso: {} } };
 
 // State Department Overseas Citizens Services, staffed around the clock.
 const OCS_ABROAD = '+1 202-501-4444';
@@ -132,6 +132,8 @@ async function addAdvisoryLayer() {
     }, map.getLayer('sitrep-state') ? 'sitrep-state' : undefined);
     // A marker or embassy under the click wins, the country card is for the ground between them.
     addLgbtLayer();
+    addAirspaceLayers();
+    loadAirspace().then(() => setAirspaceVisible(!state.hidden.has('airspace')));
     map.on('click', (e) => {
       if (map.queryRenderedFeatures(e.point, { layers: ['sitrep-dot', 'sitrep-embassy'] }).length) return;
       if (!state.hidden.has('lgbt')) {  // the index layer is on, a click opens its country
@@ -159,6 +161,119 @@ async function addAdvisoryLayer() {
   } catch (err) {
     console.error('country polygons failed to load', err);
   }
+}
+
+// EASA airspace bulletins (conflict zone information bulletins): the European regulator telling airlines that
+// the airspace over somewhere is dangerous for civil aircraft, and what to do about it. Outlines, not fills,
+// because the country already carries an advisory tint. A signal about risk to aircraft, not a prediction, and
+// not a measure of risk on the ground. Recently issued or revised bulletins are the ones worth a second look.
+const AIR_COLOR = { do_not_operate: '#e040fb', caution: '#7dd3fc' };
+const AIR_LABEL = { do_not_operate: 'DO NOT OPERATE', caution: 'CAUTION' };
+const AIR_LAYERS = ['sitrep-airspace-line', 'sitrep-airspace-partial'];
+
+function airspaceStyle() {
+  // Per country, the worst kind wins. Whole-country and part-country bulletins are drawn differently.
+  const worst = { full: {}, part: {} };
+  for (const b of state.airspace.items) {
+    for (const iso2 of b.countries) {
+      const bucket = b.partial ? worst.part : worst.full;
+      if (bucket[iso2] !== 'do_not_operate') bucket[iso2] = b.kind;
+    }
+  }
+  const colorExpr = (bucket) => {
+    const stops = Object.entries(bucket).flatMap(([iso2, kind]) => [iso2, AIR_COLOR[kind]]);
+    return stops.length ? ['match', ['get', 'iso2'], ...stops, 'rgba(0,0,0,0)'] : 'rgba(0,0,0,0)';
+  };
+  return { full: worst.full, part: worst.part, fullColor: colorExpr(worst.full), partColor: colorExpr(worst.part) };
+}
+
+function applyAirspace() {
+  if (!map.getLayer('sitrep-airspace-line')) return;
+  const st = airspaceStyle();
+  map.setFilter('sitrep-airspace-line', ['in', ['get', 'iso2'], ['literal', Object.keys(st.full)]]);
+  map.setFilter('sitrep-airspace-partial', ['in', ['get', 'iso2'], ['literal', Object.keys(st.part)]]);
+  map.setPaintProperty('sitrep-airspace-line', 'line-color', st.fullColor);
+  map.setPaintProperty('sitrep-airspace-partial', 'line-color', st.partColor);
+}
+
+function addAirspaceLayers() {
+  const before = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+  const fade = ['interpolate', ['linear'], ['zoom'], 6, 1, 10, 0.15];  // Natural Earth shapes are coarse up close
+  map.addLayer({ id: 'sitrep-airspace-line', type: 'line', source: 'sitrep-countries',
+    filter: ['in', ['get', 'iso2'], ['literal', []]],
+    layout: { 'line-join': 'round', visibility: state.hidden.has('airspace') ? 'none' : 'visible' },
+    paint: { 'line-color': 'rgba(0,0,0,0)', 'line-opacity': fade, 'line-dasharray': [2, 1.2],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1.6, 6, 3.4] } }, before);
+  map.addLayer({ id: 'sitrep-airspace-partial', type: 'line', source: 'sitrep-countries',
+    filter: ['in', ['get', 'iso2'], ['literal', []]],
+    layout: { 'line-join': 'round', visibility: state.hidden.has('airspace') ? 'none' : 'visible' },
+    paint: { 'line-color': 'rgba(0,0,0,0)', 'line-opacity': fade, 'line-dasharray': [0.6, 1.8],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1, 6, 2] } }, before);
+  applyAirspace();
+}
+
+async function loadAirspace() {
+  try {
+    const data = await (await fetch('/api/airspace')).json();
+    state.airspace.items = data.items || [];
+    state.airspace.byIso = {};
+    for (const b of state.airspace.items) for (const iso2 of b.countries) (state.airspace.byIso[iso2] ||= []).push(b);
+    applyAirspace();
+    refreshAdvisoryCard();
+  } catch (err) {
+    console.error('airspace load failed', err);
+  }
+}
+
+function setAirspaceVisible(on) {
+  AIR_LAYERS.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'));
+  const box = el('legend-air');
+  box.hidden = !on || !state.airspace.items.length;
+  if (!box.hidden) {
+    box.innerHTML = `<div class="lg-legend-title">✈ EASA airspace bulletins</div>
+      <div class="air-key"><span style="border-color:${AIR_COLOR.do_not_operate}"></span>Airlines advised not to operate</div>
+      <div class="air-key"><span style="border-color:${AIR_COLOR.caution}"></span>Caution advised</div>
+      <div class="air-key"><span class="dotted" style="border-color:${AIR_COLOR.do_not_operate}"></span>Part of a country only</div>
+      <div class="lg-legend-note">Risk to aircraft, not a prediction and not a measure of risk on the ground. Click a country, and look for NEW or REVISED. Source: <a href="https://www.easa.europa.eu/en/domains/air-operations/czibs" target="_blank" rel="noopener noreferrer">EASA</a>.</div>`;
+  }
+}
+
+const daysAgo = (d) => (d ? Math.floor((Date.now() - Date.parse(d)) / 864e5) : null);
+const fmtDay = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
+
+// NEW when issued within 30 days, REVISED when revised within 30 days. Those are the ones that may mean something changed.
+function airTag(b) {
+  const issued = daysAgo(b.issued), revised = daysAgo(b.revised);
+  if (issued != null && issued <= 30) return '<span class="air-tag">NEW</span>';
+  if (revised != null && revised <= 30) return `<span class="air-tag">REVISED ${revised === 0 ? 'TODAY' : revised + ' DAYS AGO'}</span>`;
+  return '';
+}
+
+function airspaceHtml(iso2) {
+  return (state.airspace.byIso[iso2] || []).map((b) => {
+    const clip = (r, n) => (r.length > n ? r.slice(0, n - 3) + '...' : r);
+    const first = b.recommendations.slice(0, 2).map((r) => `<div class="air-rec">“${esc(clip(r, 320))}”</div>`).join('');
+    const rest = b.recommendations.slice(2).map((r) => `<div class="air-rec">“${esc(r)}”</div>`).join('');
+    const more = `<details class="air-more"><summary>Full bulletin text</summary>
+      ${b.revision_description ? `<div class="pop-note"><b>Latest revision</b> ${esc(b.revision_description)}</div>` : ''}
+      <div class="air-desc">${esc(b.description)}</div>${rest}
+      ${b.airspace.length ? `<div class="pop-note"><b>Affected airspace</b> ${esc(b.airspace.join(' '))}</div>` : ''}</details>`;
+    const hist = b.history.length ? `<details class="air-more"><summary>Earlier bulletins (${b.history.length})</summary>` +
+      b.history.map((h) => `<div class="air-hist"><a href="${esc(safeUrl(h.url))}" target="_blank" rel="noopener noreferrer">${esc(h.title)} ${esc(h.number)}</a>
+        <span class="pop-meta">issued ${esc(fmtDay(h.issued))}${h.until ? ', valid until ' + esc(fmtDay(h.until)) : ''}, withdrawn</span></div>`).join('') + '</details>' : '';
+    return `<div class="airspace air-${b.kind}">
+      <div class="air-head">✈ EASA AIRSPACE · ${AIR_LABEL[b.kind]} ${airTag(b)}</div>
+      <div class="pop-row">${esc(b.subject)}${b.partial && b.scope ? ` <span class="pop-meta">(part of the country: ${esc(b.scope)})</span>` : ''}</div>
+      ${first}${more}${hist}
+      <div class="pop-meta">${esc(b.number)} · issued ${esc(fmtDay(b.issued))} · revised ${esc(fmtDay(b.revised))} · valid until ${esc(fmtDay(b.valid_until))} ·
+        <a href="${esc(safeUrl(b.source_url))}" target="_blank" rel="noopener noreferrer">EASA</a></div>
+      ${staleNoticeHtml(b, 'EASA')}</div>`;
+  }).join('');
+}
+
+function airspaceCardHtml(iso2) {
+  return (state.airspace.byIso[iso2] || []).map((b) =>
+    `<div class="air-card air-${b.kind}">✈ Airspace: ${AIR_LABEL[b.kind].toLowerCase()} (EASA)${b.partial ? ', part' : ''} ${airTag(b)}</div>`).join('');
 }
 
 // LGBT+ index layer: Equaldex Equality Index, laws and public attitudes. Off by default. It is a country
@@ -354,12 +469,12 @@ function embassyNoticeHtml(a) {
 }
 
 // If the live feed has been unreachable, say so. A stale advisory must not pass as current.
-function staleNoticeHtml(a) {
+function staleNoticeHtml(a, source = 'State Dept') {
   if (!a || !a.as_of) return '';
   const hours = (Date.now() - Date.parse(a.as_of)) / 3.6e6;
   if (!(hours > 12)) return '';
   const when = new Date(a.as_of).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  return `<div class="pop-note stale">The State Dept feed has been unreachable since ${esc(when)}. This may be out of date, check travel.state.gov.</div>`;
+  return `<div class="pop-note stale">The ${esc(source)} feed has been unreachable since ${esc(when)}. This may be out of date, check the source.</div>`;
 }
 
 function advisoryPopup(a) {
@@ -370,6 +485,7 @@ function advisoryPopup(a) {
         `<a href="${esc(safeUrl(e.link))}" target="_blank" rel="noopener noreferrer">${esc(e.name)}</a>, Level ${e.level}`).join('; ')}</div>` : '';
   return `<div class="pop-title">${esc(a.country)}</div>
     ${advisoryBanner(a)}
+    ${airspaceHtml(a.iso2)}
     ${a.summary ? `<div class="pop-row">${esc(a.summary)}</div>` : ''}
     ${chips ? `<div class="chips">${chips}</div>` : ''}
     ${a.changes ? `<div class="pop-note"><b>Latest update</b> ${esc(a.changes.length > 300 ? a.changes.slice(0, 300).replace(/\s\S*$/, '') + '...' : a.changes)}</div>` : ''}
@@ -394,7 +510,7 @@ function refreshAdvisoryCard() {
   box.className = `adv-card adv-card-${a.level}`;
   box.innerHTML = `<div class="n-label">State Dept advisory</div>
     <div class="n-name">${esc(a.country)}</div>
-    ${advisoryBanner(a)}`;
+    ${advisoryBanner(a)}${airspaceCardHtml(a.iso2)}`;
   box.onclick = () => {
     popup.setLngLat(map.getCenter()).setHTML(advisoryPopup(a)).addTo(map);
     wireTravel(popup);
@@ -577,6 +693,7 @@ function embassyPopup(p) {
     <div class="pop-meta ${p.status === 'active' ? '' : 'pop-warn'}">${esc(countryName(p.iso2))}${p.iso2 ? ' · ' : ''}${esc(STATUS_TEXT[p.status] || p.status)}</div>
     ${p.status_note ? `<div class="pop-note">${esc(p.status_note)}</div>` : ''}
     ${state.advisories[p.iso2] ? `<div class="pop-row"><b>State Dept advisory</b>${advisoryBanner(state.advisories[p.iso2])}</div>${embassyNoticeHtml(state.advisories[p.iso2])}${staleNoticeHtml(state.advisories[p.iso2])}` : ''}
+    ${airspaceHtml(p.iso2)}
     <div class="pop-row"><b>Address</b> ${p.address ? esc(p.address) : 'not in the map data'}</div>
     <div class="pop-row"><b>Phone</b> ${phones.length ? phones.map(telLink).join(', ') : 'not in the map data'}${site ? ' · ' + site : ''}</div>
     <div class="pop-row"><b>State Dept, 24/7</b> ${telLink(OCS_ABROAD)} from abroad, ${telLink(OCS_US)} from the US or Canada</div>
@@ -596,7 +713,7 @@ function applyLayerFilter() {
 function renderLayers() {
   const box = el('layers');
   box.innerHTML = '';
-  [...new Set([...state.layers, 'advisory', 'lgbt'])].sort().forEach((layer) => {
+  [...new Set([...state.layers, 'advisory', 'lgbt', 'airspace'])].sort().forEach((layer) => {
     const label = document.createElement('label');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
@@ -617,6 +734,7 @@ function renderLayers() {
         }
         setLgbtVisible(cb.checked);
       }
+      if (layer === 'airspace') setAirspaceVisible(cb.checked);
       if (layer === 'advisory' || layer === 'lgbt') renderLayers();           // keep both checkboxes honest
       applyLayerFilter();
       refreshAdvisoryCard();
@@ -731,3 +849,4 @@ map.on('error', (e) => console.error('map error', e.error?.message || e));
 
 setInterval(loadFeatures, 5 * 60 * 1000);
 setInterval(loadAdvisories, 30 * 60 * 1000);
+setInterval(loadAirspace, 30 * 60 * 1000);
