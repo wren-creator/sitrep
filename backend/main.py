@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from fastapi.staticfiles import StaticFiles
 
+import aircraft
 import brief
 import facts
 import lookup
@@ -195,6 +196,34 @@ def airspace():
     items.sort(key=lambda p: (p["kind"] != "do_not_operate", -(int((p.get("revised") or "0").replace("-", "")))))
     return {"items": items, "fetched_at": st["fetched_at"] if st else None,
             "ok": bool(st["ok"]) if st else False, "error": st["error"] if st else None}
+
+
+@app.get("/api/aircraft")
+async def aircraft_area(lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-180, le=180),
+                        nm: float = Query(150, gt=0, le=1000)):
+    """Live aircraft near a point from adsb.lol, cached a few seconds. Radius is capped at the API's 250 nm."""
+    try:
+        return {"aircraft": await aircraft.in_area(lat, lon, nm), "as_of": time.time(), "radius_nm": min(nm, aircraft.MAX_RADIUS_NM)}
+    except aircraft.AircraftError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/aircraft/watch")
+async def aircraft_watch():
+    """Worldwide emergency squawks and military-flagged aircraft. Slow poll, cached a minute."""
+    try:
+        return await aircraft.watch()
+    except aircraft.AircraftError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/aircraft/route")
+async def aircraft_route(callsign: str = Query(..., pattern="^[A-Za-z0-9]{2,8}$")):
+    """Airline, origin and destination for a callsign (adsbdb.com)."""
+    try:
+        return await aircraft.route(callsign)
+    except aircraft.AircraftError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/api/lgbt")
