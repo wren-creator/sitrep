@@ -1,0 +1,35 @@
+{
+  "_readme": "Hand-kept list of host countries where the US embassy is NOT operating normally. OpenStreetMap cannot say whether an embassy is open, so anything not listed here shows as active. Edit this file and restart. Status here is NOT checked live.",
+  "_seeded": "From long-standing public announcements, knowledge through early 2026. Review against travel.state.gov before relying on it.",
+  "countries": {
+    "AF": {
+      "status": "suspended",
+      "note": "Embassy Kabul suspended operations in August 2021."
+    },
+    "SY": {
+      "status": "suspended",
+      "note": "Embassy Damascus suspended operations in 2012."
+    },
+    "LY": {
+      "status": "suspended",
+      "note": "Embassy Tripoli suspended operations in 2014."
+    },
+    "YE": {
+      "status": "suspended",
+      "note": "Embassy Sanaa suspended operations in 2015."
+    },
+    "BY": {
+      "status": "suspended",
+      "note": "Embassy Minsk suspended operations in February 2022."
+    },
+    "SD": {
+      "status": "suspended",
+      "note": "Embassy Khartoum suspended operations in April 2023."
+    },
+    "VE": {
+      "status": "check",
+      "note": "Embassy Caracas suspended operations in 2019. Status may have changed, confirm with the State Department.",
+      "city": "Caracas"
+    }
+  }
+}

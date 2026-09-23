@@ -1,8 +1,12 @@
-const LAYER_LABELS = { disaster: 'Disasters', conflict: 'Unrest', aviation: 'Flights', health: 'Health' };
+const LAYER_LABELS = { disaster: 'Disasters', conflict: 'Unrest', aviation: 'Flights', health: 'Health', embassy: '★ US embassies' };
 const SEV_COLOR = { low: '#4aa3ff', medium: '#f2c14e', high: '#ff8a3d', critical: '#ff4d4d' };
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
 
-const state = { features: [], layers: new Set(), hidden: new Set() };
+const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set() };
+
+// State Department Overseas Citizens Services, staffed around the clock.
+const OCS_ABROAD = '+1 202-501-4444';
+const OCS_US = '1-888-407-4747';
 const el = (id) => document.getElementById(id);
 
 function esc(s) {
@@ -102,27 +106,91 @@ function addFeatureLayers() {
       'circle-pitch-alignment': 'map',
     },
   });
+  // Golden star for an embassy that is operating, grey for one that is suspended or unclear.
+  map.addImage('star-active', starImage('#ffc83d', '#7a5200'), { pixelRatio: 2 });
+  map.addImage('star-inactive', starImage('#6d7885', '#2a323b'), { pixelRatio: 2 });
+  map.addLayer({
+    id: 'sitrep-embassy', type: 'symbol', source: 'sitrep',
+    layout: {
+      'icon-image': ['match', ['get', 'status'], 'active', 'star-active', 'star-inactive'],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 1, 0.45, 5, 0.7, 10, 0.95],
+      'icon-allow-overlap': true, 'icon-ignore-placement': true,
+    },
+  });
   applyLayerFilter();
 
-  const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '300px', offset: 10 });
+  const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px', offset: 10, focusAfterOpen: false });
   map.on('click', 'sitrep-dot', (e) => {
     const f = e.features[0];
-    const p = f.properties;
-    const when = p.timestamp ? new Date(p.timestamp).toLocaleString() : '';
-    popup.setLngLat(f.geometry.coordinates).setHTML(
-      `<div class="pop-title">${esc(p.title)}</div>
-       <div class="pop-meta">${esc(p.layer)} · ${esc(p.severity)} · ${esc(when)} ·
-         <a href="${esc(safeUrl(p.source_url))}" target="_blank" rel="noopener noreferrer">source</a></div>
-       <div class="pop-note">${esc(p.summary)}</div>`).addTo(map);
+    popup.setLngLat(f.geometry.coordinates).setHTML(incidentPopup(f.properties)).addTo(map);
   });
-  map.on('mouseenter', 'sitrep-dot', () => { map.getCanvas().style.cursor = 'pointer'; });
-  map.on('mouseleave', 'sitrep-dot', () => { map.getCanvas().style.cursor = ''; });
+  map.on('click', 'sitrep-embassy', (e) => {
+    const f = e.features[0];
+    // MapLibre flattens list properties (phones) to strings, so use our own copy of the feature.
+    const full = state.byId.get(f.properties.id)?.properties || f.properties;
+    popup.setLngLat(f.geometry.coordinates).setHTML(embassyPopup(full)).addTo(map);
+  });
+  ['sitrep-dot', 'sitrep-embassy'].forEach((id) => {
+    map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
+  });
+}
+
+function starImage(fill, stroke) {
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  g.translate(size / 2, size / 2 + 2);
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? 27 : 11.5;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  g.closePath();
+  g.fillStyle = fill; g.fill();
+  g.lineWidth = 3; g.lineJoin = 'round'; g.strokeStyle = stroke; g.stroke();
+  return g.getImageData(0, 0, size, size);
+}
+
+const telHref = (n) => 'tel:' + String(n).replace(/[^\d+]/g, '');
+const telLink = (n) => `<a href="${esc(telHref(n))}">${esc(n)}</a>`;
+
+function incidentPopup(p) {
+  const when = p.timestamp ? new Date(p.timestamp).toLocaleString() : '';
+  return `<div class="pop-title">${esc(p.title)}</div>
+    <div class="pop-meta">${esc(p.layer)} · ${esc(p.severity)} · ${esc(when)} ·
+      <a href="${esc(safeUrl(p.source_url))}" target="_blank" rel="noopener noreferrer">source</a></div>
+    <div class="pop-note">${esc(p.summary)}</div>`;
+}
+
+const STATUS_TEXT = {
+  active: 'Listed as operating (not checked live)',
+  suspended: 'Operations suspended',
+  check: 'Status unclear, confirm with the State Department',
+};
+
+function embassyPopup(p) {
+  const phones = Array.isArray(p.phones) ? p.phones : [];
+  const site = p.website
+    ? `<a href="${esc(safeUrl(p.website))}" target="_blank" rel="noopener noreferrer">embassy website</a>` : '';
+  return `<div class="pop-title">★ ${esc(p.title)}</div>
+    <div class="pop-meta ${p.status === 'active' ? '' : 'pop-warn'}">${esc(p.iso2 || '')} · ${esc(STATUS_TEXT[p.status] || p.status)}</div>
+    ${p.status_note ? `<div class="pop-note">${esc(p.status_note)}</div>` : ''}
+    <div class="pop-row"><b>Address</b> ${p.address ? esc(p.address) : 'not in the map data'}</div>
+    <div class="pop-row"><b>Phone</b> ${phones.length ? phones.map(telLink).join(', ') : 'not in the map data'}${site ? ' · ' + site : ''}</div>
+    <div class="pop-row"><b>State Dept, 24/7</b> ${telLink(OCS_ABROAD)} from abroad, ${telLink(OCS_US)} from the US or Canada</div>
+    <div class="pop-note">Details come from OpenStreetMap and are not checked live. Confirm on the embassy website or travel.state.gov before you rely on them.</div>`;
 }
 
 function applyLayerFilter() {
-  const hidden = [...state.hidden];
-  const filter = hidden.length ? ['!', ['in', ['get', 'layer'], ['literal', hidden]]] : null;
-  ['sitrep-glow', 'sitrep-dot'].forEach((id) => map.getLayer(id) && map.setFilter(id, filter));
+  const notHidden = state.hidden.size ? [['!', ['in', ['get', 'layer'], ['literal', [...state.hidden]]]]] : [];
+  const isEmbassy = ['==', ['get', 'layer'], 'embassy'];
+  const setFilter = (id, ...parts) => map.getLayer(id) && map.setFilter(id, ['all', ...parts, ...notHidden]);
+  setFilter('sitrep-glow', ['!', isEmbassy]);
+  setFilter('sitrep-dot', ['!', isEmbassy]);
+  setFilter('sitrep-embassy', isEmbassy);
 }
 
 function renderLayers() {
@@ -148,6 +216,7 @@ async function loadFeatures() {
     const res = await fetch('/api/features');
     const data = await res.json();
     state.features = data.features;
+    state.byId = new Map(data.features.map((f) => [f.properties.id, f]));
     state.layers = new Set(state.features.map((f) => f.properties.layer));
     renderLayers();
     map.getSource('sitrep')?.setData(data);
@@ -171,6 +240,7 @@ let sideTimer;
 function refreshSidebar() {
   clearTimeout(sideTimer);
   sideTimer = setTimeout(async () => {
+    refreshNearest();
     const q = new URLSearchParams({ ...viewBox(), limit: 100 });
     const res = await fetch('/api/headlines?' + q);
     const data = await res.json();
@@ -192,6 +262,24 @@ function refreshSidebar() {
       ul.append(li);
     });
   }, 250);
+}
+
+// The closest operating US embassy to the middle of the map. Straight-line distance, not a route.
+async function refreshNearest() {
+  const box = el('nearest');
+  try {
+    const c = map.getCenter();
+    const res = await fetch(`/api/nearest-embassy?lat=${c.lat}&lon=${c.lng}`);
+    const hit = (await res.json()).items[0];
+    if (!hit) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = `<div class="n-label">★ Nearest operating US embassy</div>
+      <div class="n-name">${esc(hit.title)}</div>
+      <div class="n-meta">${esc(hit.km.toLocaleString())} km straight-line from the middle of the map${hit.iso2 ? ' · ' + esc(hit.iso2) : ''}</div>`;
+    box.onclick = () => map.flyTo({ center: [hit.lon, hit.lat], zoom: 11, duration: 1400 });
+  } catch (err) {
+    box.hidden = true;
+  }
 }
 
 // Search goes through our backend, which proxies the geocoder.

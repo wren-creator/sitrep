@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/nearest-embassy?lat&lon&n`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -28,7 +28,7 @@ Drop a file in `backend/plugins/` with a class named `Plugin` that extends `Sitr
 
 ## Status
 
-Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest and conflict.
+Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest and conflict, US embassies.
 
 ### About the Unrest layer
 
@@ -41,10 +41,21 @@ Things to know when reading it:
 - The first run backfills 24 hours (about 95 small files, a couple of seconds). After that it only fetches new files.
 - GDELT redirects plain http, so the plugin uses https, and the newest file often 404s for a few minutes. That is treated as "not yet", not as an error.
 
+### About the embassy stars
+
+Every operating US embassy is a gold star. Click one for the address, phone numbers, the embassy website and the State Department's 24/7 lines (+1 202-501-4444 from abroad, 1-888-407-4747 from the US or Canada). The card at the top of the sidebar shows the nearest operating embassy to the middle of the map. That distance is straight-line, not a route, so a river, a border or a closed road can make the real trip much longer.
+
+Where it comes from and what to distrust:
+- The list comes from OpenStreetMap through the Overpass API (`backend/plugins/embassies.py`), refreshed weekly. Ambassador residences, UN and EU missions, USAID offices and cultural centers are filtered out. About 170 embassies remain.
+- Phone numbers and addresses are whatever volunteers entered. About four in five embassies have a phone, and the rest say "not in the map data" and point to the website. Nothing is filled in by guessing. Confirm before you rely on any of it.
+- OpenStreetMap cannot tell whether an embassy is open. `backend/data/embassy_status.json` is a hand-kept list of embassies that are suspended or unclear (Afghanistan, Syria, Libya, Yemen, Belarus, Sudan, Venezuela). Those show as grey stars and are skipped by the nearest-embassy card. Everything else shows gold and the popup says "not checked live". That file was seeded from public announcements up to early 2026 and needs a review against travel.state.gov. Ordered departures and newer closures are not in it.
+- Known data quirks: a few entries carry the wrong host country or are consulates tagged as embassies (Guayaquil, for one), and a few countries show two posts (Israel has Jerusalem and Tel Aviv).
+
 ## Roadmap
 
 - [x] GDELT headlines for unrest and conflict, filtered by visible area
 - [ ] Unrest layer: fetch real article titles for the top places, and cut the capital-city dateline skew
+- [ ] Embassies: read suspended and ordered-departure status from State Dept alerts so the status file maintains itself, add consulates general, and check the phone numbers against usembassy.gov
 - [ ] Country cards: State Dept advisory level and alerts (red banner at Level 3 or 4), UK FCDO
 - [ ] Trans traveler safety: Equaldex legal framework plus curated social climate notes, no single score
 - [ ] Vaccine and entry requirements per country (CDC Travelers' Health, WHO)
@@ -67,4 +78,4 @@ Safety information about people is subjective and uneven. City and countryside c
 
 - Basemap tiles: [OpenFreeMap](https://openfreemap.org), OpenMapTiles schema, data from OpenStreetMap contributors. The map needs internet for now.
 - US county boundaries: US Census cartographic boundaries via [us-atlas](https://github.com/topojson/us-atlas) (ISC licence), decoded with topojson-client (ISC). Both are vendored in `frontend/vendor/`.
-- Earthquakes: USGS. Disasters: GDACS. Unrest: the GDELT Project.
+- Earthquakes: USGS. Disasters: GDACS. Unrest: the GDELT Project. Embassies: OpenStreetMap contributors (ODbL) via Overpass.

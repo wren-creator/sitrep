@@ -13,6 +13,7 @@ from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 
 import plugins as plugins_pkg
+from geo import haversine_km
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "data" / "sitrep.db"
@@ -134,13 +135,36 @@ def headlines(west: float = Query(-180), south: float = Query(-90),
     """Features inside the visible box, worst severity first, then newest."""
     lon_clause = "lon BETWEEN ? AND ?" if west <= east else "(lon >= ? OR lon <= ?)"
     with db() as c:
+        # Embassies are reference points on the map, not news, so they stay out of the headlines.
         rows = c.execute(
-            f"SELECT json, severity, timestamp FROM features WHERE lat BETWEEN ? AND ? AND {lon_clause}",
+            f"SELECT json, severity, timestamp FROM features WHERE layer != 'embassy' "
+            f"AND lat BETWEEN ? AND ? AND {lon_clause}",
             (south, north, west, east),
         ).fetchall()
     items = [json.loads(r["json"])["properties"] | {"_geo": json.loads(r["json"])["geometry"]} for r in rows]
     items.sort(key=lambda p: (SEV_RANK.get(p["severity"], 0), p.get("timestamp") or ""), reverse=True)
     return {"items": items[:limit], "total": len(items)}
+
+
+def nearest_embassies(lat: float, lon: float, n: int = 1) -> list[dict]:
+    """Closest embassies that are operating, straight-line distance (not a driving route)."""
+    with db() as c:
+        rows = c.execute("SELECT json FROM features WHERE layer = 'embassy'").fetchall()
+    found = []
+    for r in rows:
+        f = json.loads(r["json"])
+        p = f["properties"]
+        if p.get("status") != "active":
+            continue
+        elon, elat = f["geometry"]["coordinates"]
+        found.append({**p, "lat": elat, "lon": elon, "km": round(haversine_km(lat, lon, elat, elon))})
+    found.sort(key=lambda x: x["km"])
+    return found[:n]
+
+
+@app.get("/api/nearest-embassy")
+def nearest_embassy(lat: float, lon: float, n: int = Query(1, ge=1, le=5)):
+    return {"items": nearest_embassies(lat, lon, n)}
 
 
 @app.get("/api/geocode")

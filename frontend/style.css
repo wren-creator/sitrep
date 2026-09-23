@@ -44,3 +44,14 @@ main { display: flex; height: calc(100% - 55px); }
 .pop-meta { color: var(--muted); font-size: 12px; }
 .pop-meta a { color: var(--muted); }
 .pop-note { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.pop-row { margin-top: 6px; font-size: 13px; }
+.pop-row b { display: block; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.pop-row a, .pop-meta a { color: #8fc1ff; }
+.pop-warn { color: var(--high); }
+
+/* Nearest operating embassy */
+#nearest { background: #1a1608; border: 1px solid #5a4a12; border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; cursor: pointer; }
+#nearest:hover { background: #211b0a; }
+#nearest .n-label { color: #ffc83d; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+#nearest .n-name { font-weight: 600; margin-top: 2px; }
+#nearest .n-meta { color: var(--muted); font-size: 12px; }
