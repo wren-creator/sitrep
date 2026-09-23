@@ -131,9 +131,10 @@ def plugin_status():
 @app.get("/api/features")
 def features(layers: str = "", limit: int = 2000):
     wanted = [x for x in layers.split(",") if x]
-    sql, args = "SELECT json FROM features", []
+    # Country-level records (advisories) have no point on the map, they have their own endpoint.
+    sql, args = "SELECT json FROM features WHERE lat IS NOT NULL", []
     if wanted:
-        sql += f" WHERE layer IN ({','.join('?' * len(wanted))})"
+        sql += f" AND layer IN ({','.join('?' * len(wanted))})"
         args = wanted
     with db() as c:
         rows = c.execute(sql + " LIMIT ?", (*args, limit)).fetchall()
@@ -155,6 +156,20 @@ def headlines(west: float = Query(-180), south: float = Query(-90),
     items = [json.loads(r["json"])["properties"] | {"_geo": json.loads(r["json"])["geometry"]} for r in rows]
     items.sort(key=lambda p: (SEV_RANK.get(p["severity"], 0), p.get("timestamp") or ""), reverse=True)
     return {"items": items[:limit], "total": len(items)}
+
+
+@app.get("/api/advisories")
+def advisories():
+    """State Department travel advisories keyed by ISO country code."""
+    with db() as c:
+        rows = c.execute("SELECT json FROM features WHERE layer = 'advisory'").fetchall()
+        st = c.execute("SELECT fetched_at, ok, error FROM plugin_state WHERE name = 'state_dept'").fetchone()
+    items = {}
+    for r in rows:
+        p = json.loads(r["json"])["properties"]
+        items[p["iso2"]] = p
+    return {"items": items, "fetched_at": st["fetched_at"] if st else None,
+            "ok": bool(st["ok"]) if st else False, "error": st["error"] if st else None}
 
 
 def nearest_embassies(lat: float, lon: float, n: int = 1) -> list[dict]:
