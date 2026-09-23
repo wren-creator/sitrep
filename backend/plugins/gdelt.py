@@ -27,15 +27,29 @@ BASE = "https://data.gdeltproject.org/gdeltv2"
 WINDOW_HOURS = 24
 MAX_FEATURES = 400
 
-# CAMEO root code: (label, minimum distinct outlets to show, severity bump)
-# Root 17 (coercion: sanctions, arrests, political pressure) is left out on purpose.
-# It was the largest group and almost all political news datelined from capitals.
-ROOTS = {
-    "14": ("Protests", 4, 0),
-    "15": ("Military posturing", 4, 0),
-    "18": ("Attacks", 3, 0),
-    "19": ("Armed clashes", 3, 0),
-    "20": ("Mass violence", 2, 1),
+# Two layers, split by who is acting, not just by event type:
+#   unrest   civil: protests and riots, violent repression of civilians, curfews and emergency rule
+#   conflict military: armed forces, rebels and insurgents fighting, attacking, or posturing
+# The armed test matters. Only about 14% of "fight" events (CAMEO 19) and 9% of "assault" events
+# (18) have any military or armed-group actor. The rest are governments, police, courts and
+# civilians, which is politics and ordinary crime, and it flooded the first version of this layer.
+ARMED = {"MIL", "REB", "INS", "SEP", "UAF", "IMG"}  # military, rebels, insurgents, separatists, other armed forces
+ACTOR1_TYPES = (12, 13, 14)                         # Actor1 type code columns
+ACTOR2_TYPES = (22, 23, 24)                         # Actor2 type code columns
+CIVIL = {"CVL", "LAB", "EDU", "OPP", "AGR"}         # civilians, labour, students, opposition, farmers
+STATE_FORCE = {"COP", "MIL", "GOV"}                 # police, military, government
+
+# kind: (layer, label, minimum distinct outlets to show, severity bump)
+KINDS = {
+    # Civil unrest is covered by far fewer outlets than a war, so its bar is lower. Even so this feed
+    # captures it thinly, expect a dozen or so markers and check the headline in each popup.
+    "protest":    ("unrest", "Protests", 2, 0),
+    "repression": ("unrest", "Violent repression of civilians", 2, 1),
+    "curfew":     ("unrest", "Curfew or emergency rule", 2, 1),
+    "posture":    ("conflict", "Military posturing", 4, 0),
+    "clash":      ("conflict", "Armed clashes", 3, 0),
+    "attack":     ("conflict", "Attacks by armed groups", 3, 0),
+    "mass":       ("conflict", "Mass violence", 2, 1),
 }
 LEVELS = ["low", "medium", "high", "critical"]
 
@@ -45,6 +59,31 @@ def _severity(outlets: int, bump: int) -> str:
     # danger. Raw mention counts were dominated by one outlet repeating itself.
     base = 3 if outlets >= 20 else 2 if outlets >= 10 else 1 if outlets >= 5 else 0
     return LEVELS[min(base + bump, 3)]
+
+
+def _kind(root: str, code: str, t1: set, t2: set) -> str | None:
+    """Which kind of event this is, or None if it is neither civil unrest nor military conflict.
+
+    t1 and t2 are the actor type codes on each side. Event type alone is not enough: a government
+    "boycotting" a song contest, or a politician giving a speech, is coded as protest, and a
+    migrants story is coded as violent repression.
+    """
+    if root == "14":
+        # 141 demonstrate, 142 hunger strike, 143 strike or boycott, 144 obstruct, 145 riot. Code 140 is
+        # "engage in political dissent", a speech and not people in the street. And it needs a civil-society
+        # actor, a government acting alone is not a protest.
+        return "protest" if code != "140" and (t1 | t2) & CIVIL else None
+    if code == "175":
+        return "repression" if t1 & STATE_FORCE and t2 & CIVIL else None  # state forces against civilians
+    if code in ("1723", "1724"):
+        return "curfew"                  # impose curfew, state of emergency or martial law
+    if root == "20":
+        return "mass"                    # mass killings and similar, armed or not
+    if not (t1 | t2) & ARMED:
+        return None                      # the rest only counts when an armed actor is involved
+    return {"15": "posture", "19": "clash", "18": "attack"}.get(root)
+
+
 # 3 US city, 4 world city, 5 world state/province. 0/1/2 are unknown/country/US state.
 GOOD_GEO = {"3", "4", "5"}
 
@@ -62,10 +101,13 @@ def _parse(data: bytes) -> list[tuple]:
     rows = csv.reader(io.TextIOWrapper(z.open(z.namelist()[0]), encoding="utf-8", errors="replace"), delimiter="\t")
     out = []
     for r in rows:
-        if len(r) < 61 or r[28] not in ROOTS or r[51] not in GOOD_GEO or not r[56] or not r[57]:
+        if len(r) < 61 or r[51] not in GOOD_GEO or not r[56] or not r[57]:
+            continue
+        kind = _kind(r[28], r[26], {r[i] for i in ACTOR1_TYPES if r[i]}, {r[i] for i in ACTOR2_TYPES if r[i]})
+        if not kind:
             continue
         try:
-            out.append((r[28], float(r[56]), float(r[57]), r[52], int(r[31] or 0), int(r[33] or 0), r[60], r[59]))
+            out.append((kind, float(r[56]), float(r[57]), r[52], int(r[31] or 0), int(r[33] or 0), r[60], r[59]))
         except ValueError:
             continue
     return out
@@ -73,7 +115,7 @@ def _parse(data: bytes) -> list[tuple]:
 
 class Plugin(SitrepPlugin):
     name = "gdelt"
-    layer = "conflict"
+    layer = "conflict"  # the main one, features carry their own layer (unrest or conflict)
     cache_ttl_seconds = 900
 
     async def fetch(self):
@@ -108,8 +150,8 @@ class Plugin(SitrepPlugin):
             groups[(ev[0], round(ev[1], 2), round(ev[2], 2))].append(ev)
 
         scored = []
-        for (root, lat, lon), evs in groups.items():
-            label, min_outlets, bump = ROOTS[root]
+        for (kind, lat, lon), evs in groups.items():
+            layer, label, min_outlets, bump = KINDS[kind]
             outlets = {urlparse(e[6]).netloc.removeprefix("www.") for e in evs}
             if len(outlets) < min_outlets:
                 continue
@@ -121,8 +163,8 @@ class Plugin(SitrepPlugin):
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [lon, lat]},
                 "properties": {
-                    "id": f"gdelt:{root}:{lat}:{lon}",
-                    "layer": self.layer,
+                    "id": f"gdelt:{kind}:{lat}:{lon}",
+                    "layer": layer,
                     "severity": severity,
                     "kind": label,
                     "outlets": len(outlets),

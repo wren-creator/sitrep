@@ -218,7 +218,7 @@ async def brief_for(id: str):
         if km <= brief.NEARBY_KM:
             nearby.append({"title": g["properties"]["title"], "severity": g["properties"]["severity"], "km": round(km)})
 
-    title = await brief.page_title(p["source_url"]) if p["layer"] == "conflict" else None
+    title = await brief.page_title(p["source_url"]) if p["layer"] in brief.NEWS_LAYERS else None
     emb = nearest_embassies(lat, lon, 1)
     return brief.build(p, title, nearby, emb[0] if emb else None)
 

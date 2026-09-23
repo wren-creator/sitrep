@@ -1,4 +1,4 @@
-const LAYER_LABELS = { disaster: 'Disasters', conflict: 'Unrest', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories' };
+const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories' };
 const SEV_COLOR = { low: '#4aa3ff', medium: '#f2c14e', high: '#ff8a3d', critical: '#ff4d4d' };
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
 
@@ -333,7 +333,7 @@ function incidentPopup(p) {
   return `<div class="pop-title">${esc(p.title)}</div>
     <div class="pop-meta">${esc(p.layer)} · ${esc(p.severity)} · ${esc(when)} ·
       <a href="${esc(safeUrl(p.source_url))}" target="_blank" rel="noopener noreferrer">source</a></div>
-    ${p.layer === 'conflict' ? '' : `<div class="pop-note">${esc(p.summary)}</div>`}
+    ${['conflict', 'unrest'].includes(p.layer) ? '' : `<div class="pop-note">${esc(p.summary)}</div>`}
     <div class="pop-brief pop-note">Loading summary...</div>`;
 }
 

@@ -28,16 +28,22 @@ Drop a file in `backend/plugins/` with a class named `Plugin` that extends `Sitr
 
 ## Status
 
-Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest and conflict, US embassies, State Department travel advisories.
+Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest (civil) and conflict (military), US embassies, State Department travel advisories.
 
-### About the Unrest layer
+### About the Unrest and Conflict layers
 
-This layer comes from the GDELT events export, which machine-codes news articles every 15 minutes. It measures how many independent outlets are reporting violence in a place over the last 24 hours. It does not verify that anything happened. Severity is a count of outlets (5, 10 and 20 outlets are the steps), not a danger score.
+Both come from the GDELT events export, which machine-codes news articles every 15 minutes. They measure how many independent outlets are reporting something in a place over the last 24 hours. They do not verify that anything happened, and severity is a count of outlets (5, 10 and 20 are the steps), not a danger score.
 
-Things to know when reading it:
-- Places are where the news is datelined, so capitals such as Washington, London and Moscow get pulled up. Treat those as "in the news" and read the source.
+They are split by who is acting, because event type alone was badly wrong. Only about 14% of GDELT "fight" events and 9% of "assault" events involve any military or armed-group actor, the rest are governments, police, courts and civilians, and the first version of this layer was mostly politics and ordinary crime (a robbery arrest showed up as "armed clashes").
+
+- **Conflict** is military: armed clashes, attacks and posturing, but only when a military, rebel, insurgent, separatist or other armed-force actor is involved. Mass violence is included either way. This layer is in good shape, the lead articles are missile strikes, attacks on shipping and the fighting around Gaza, Ukraine and Iran.
+- **Unrest** is civil: demonstrations, strikes, blockades and riots that involve civilians, labour, students, opposition or farmers, violent repression of civilians by police, military or government, and curfews or emergency rule. Generic "political dissent" (a politician's speech) and a government acting alone are excluded, they were coded as protest and were most of the noise.
+
+Things to know when reading them:
+- **Unrest is thin and only partly right.** This feed captures civil unrest poorly. Expect a dozen or so markers, roughly a third of them solid and the rest incidental mentions. Read the lead headline in the popup. The real fix is a better source, see the roadmap.
+- Places are where the news is datelined, so capitals such as Washington, London and Moscow get pulled up. Treat those as "in the news".
 - Country-level locations are dropped on purpose, they would pin a dot to the middle of a country.
-- Coercion events (sanctions, arrests, political pressure) are excluded. They were the biggest group and nearly all political news.
+- Coercion events other than violent repression and curfews (sanctions, arrests, political pressure) are excluded, they were the biggest group and nearly all political news.
 - The first run backfills 24 hours (about 95 small files, a couple of seconds). After that it only fetches new files.
 - GDELT redirects plain http, so the plugin uses https, and the newest file often 404s for a few minutes. That is treated as "not yet", not as an error.
 
@@ -78,7 +84,7 @@ Where it comes from and what to distrust:
 ## Roadmap
 
 - [x] GDELT headlines for unrest and conflict, filtered by visible area
-- [ ] Unrest layer: fetch real article titles for the top places, and cut the capital-city dateline skew
+- [ ] Unrest: a better source. GDELT's themed article index (GKG, PROTEST and RIOT themes) has far better recall than the events feed, ACLED is the other option (registration and terms to check). Also cut the capital-city dateline skew
 - [ ] Embassies: the advisory's staffing sentence is now quoted beside each embassy, but the status file is still hand-kept. Add consulates general, and check the phone numbers against usembassy.gov
 - [x] State Dept advisories: level tint, country card, red banner at Level 3 and 4
 - [ ] Advisories: place Gaza, West Bank and other sub-regions as their own areas, and add State Dept Alerts (the separate alert feed), plus UK FCDO as a second opinion

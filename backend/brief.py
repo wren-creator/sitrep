@@ -18,6 +18,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 NEARBY_KM = 150
+NEWS_LAYERS = ("conflict", "unrest")  # machine-coded from news: outlet counts and an article to quote
 SEV_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 TITLE_TTL = 6 * 3600
 _titles: dict[str, tuple[float, str | None]] = {}
@@ -105,7 +106,7 @@ def build(p: dict, title: str | None, nearby: list[dict], embassy: dict | None) 
     """p is the marker's properties. nearby items: {title, severity, km}. embassy: nearest operating one."""
     lines = []
     age = _age(p.get("timestamp"))
-    if p.get("layer") == "conflict":
+    if p.get("layer") in NEWS_LAYERS:
         n = p.get("outlets")
         if n:
             lines.append(f"{n} outlet{'s' if n != 1 else ''} reported this in the last 24 hours.")
@@ -127,7 +128,7 @@ def build(p: dict, title: str | None, nearby: list[dict], embassy: dict | None) 
         lines.append(f"No other reports within {NEARBY_KM} km in the data we hold.")
 
     lines.append("This is machine-coded from news, and datelined places skew toward capitals, so verify at the source."
-                 if p.get("layer") == "conflict"
+                 if p.get("layer") in NEWS_LAYERS
                  else "Alert levels come from automated feeds (USGS, GDACS). Verify at the source.")
 
     headline = None
