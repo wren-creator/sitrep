@@ -133,7 +133,10 @@ class Plugin(SitrepPlugin):
             if not st:  # some entries have no host country, let a status entry match by city name
                 text = f"{city} {t.get('addr:full', '')} {t.get('addr:street', '')}".lower()
                 st = next((s for s in statuses.values() if s.get("city") and s["city"].lower() in text), {})
-            title = t.get("name:en") or f"U.S. Embassy{', ' + city if city else ''}"
+            title = t.get("name:en") or "U.S. Embassy"
+            # "Embassy of the United States" alone is ambiguous, add the city when the name lacks it.
+            if city and city.lower() not in title.lower():
+                title = f"{title}, {city}"
             site = _website(t)
             out.append({
                 "type": "Feature",
