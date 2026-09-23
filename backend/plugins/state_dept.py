@@ -24,6 +24,7 @@ from pathlib import Path
 
 import httpx
 
+from facts import names
 from plugin_base import SitrepPlugin
 
 log = logging.getLogger("sitrep.state_dept")
@@ -246,7 +247,7 @@ class Plugin(SitrepPlugin):
             # Colour the country by the worst one and list every entry in the card.
             primary = max(entries, key=lambda x: (x["level"], x["updated"]))
             sev, level_text = LEVELS[primary["level"]]
-            country = by_iso2[iso2]["name"] if iso2 in by_iso2 else primary["name"]
+            country = names.display_name(iso2) if iso2 in by_iso2 else primary["name"]
             parsed = _parse_text(primary["summary"])
             out.append({
                 "type": "Feature",

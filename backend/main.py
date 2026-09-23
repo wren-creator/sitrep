@@ -13,7 +13,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 
 import brief
+import facts
 import plugins as plugins_pkg
+from facts import cache as facts_cache
 from geo import haversine_km
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +42,9 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_features_layer ON features(layer);
         CREATE TABLE IF NOT EXISTS plugin_state (
             name TEXT PRIMARY KEY, fetched_at REAL, ok INTEGER, error TEXT, count INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS country_facts (
+            iso2 TEXT, provider TEXT, fetched_at REAL, ok INTEGER, json TEXT, PRIMARY KEY (iso2, provider)
         );
         """)
 
@@ -111,6 +116,7 @@ async def runner() -> None:
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
+    facts_cache.set_db(db)
     PLUGINS.extend(load_plugins())
     task = asyncio.create_task(runner())
     yield
@@ -156,6 +162,12 @@ def headlines(west: float = Query(-180), south: float = Query(-90),
     items = [json.loads(r["json"])["properties"] | {"_geo": json.loads(r["json"])["geometry"]} for r in rows]
     items.sort(key=lambda p: (SEV_RANK.get(p["severity"], 0), p.get("timestamp") or ""), reverse=True)
     return {"items": items[:limit], "total": len(items)}
+
+
+@app.get("/api/travel-info")
+async def travel_info(iso2: str = Query(..., pattern="^[A-Za-z]{2}$")):
+    """Vaccines, health notices and entry rules for one country, fetched on demand and cached."""
+    return await facts.travel_info(iso2.upper())
 
 
 @app.get("/api/advisories")
