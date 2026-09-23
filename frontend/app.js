@@ -1,8 +1,8 @@
-const LAYER_LABELS = { disaster: 'Disasters', conflict: 'Unrest', aviation: 'Flights', health: 'Health', embassy: '★ US embassies' };
+const LAYER_LABELS = { disaster: 'Disasters', conflict: 'Unrest', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories' };
 const SEV_COLOR = { low: '#4aa3ff', medium: '#f2c14e', high: '#ff8a3d', critical: '#ff4d4d' };
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
 
-const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set() };
+const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set(), advisories: {} };
 
 // State Department Overseas Citizens Services, staffed around the clock.
 const OCS_ABROAD = '+1 202-501-4444';
@@ -26,6 +26,7 @@ const map = new maplibregl.Map({
 });
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
 map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
+const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px', offset: 10, focusAfterOpen: false });
 
 // Look up a ["match", severity, ...] expression by severity.
 const bySeverity = (critical, high, medium, low) =>
@@ -64,6 +65,149 @@ function addBoundaries() {
     'line-color': '#c7d6e6', 'line-opacity': 0.95,
     'line-width': ['interpolate', ['linear'], ['zoom'], 0, 0.8, 8, 2.2],
   });
+}
+
+// State Department advisories. Countries at Level 3 and 4 are tinted (lower levels stay clear, so the map is not
+// a wall of colour) and clicking any country opens its advisory. Polygons are Natural Earth's, vendored
+// by scripts/build_country_data.py, so they are a little coarser than the basemap borders.
+// Level 4 is a solid red tint. Level 3 is orange hatching like caution tape, because any translucent orange
+// on dark land turns to brown mud. Level 2 is deliberately not drawn, it covers 80-odd countries (France,
+// Mexico) and it still shows in each country's card.
+const LEVEL_FILL = { 4: 'rgba(255,77,77,0.34)' };
+const ADV_LAYERS = ['sitrep-advisory-fill', 'sitrep-advisory-hatch'];
+
+function hatchImage() {
+  const n = 16, c = document.createElement('canvas');
+  c.width = c.height = n;
+  const g = c.getContext('2d');
+  g.strokeStyle = 'rgba(255,150,40,0.85)';
+  g.lineWidth = 2.5;
+  g.beginPath();  // three diagonals so the stripes tile with no seams
+  for (const o of [-n, 0, n]) { g.moveTo(o, n); g.lineTo(o + n, 0); }
+  g.stroke();
+  return g.getImageData(0, 0, n, n);
+}
+const LEVEL_NAME = { 1: 'Exercise normal precautions', 2: 'Exercise increased caution', 3: 'Reconsider travel', 4: 'Do not travel' };
+
+function advisoryColorExpr() {
+  const stops = [];
+  for (const [iso2, a] of Object.entries(state.advisories)) {
+    if (LEVEL_FILL[a.level]) stops.push(iso2, LEVEL_FILL[a.level]);
+  }
+  return stops.length ? ['match', ['get', 'iso2'], ...stops, 'rgba(0,0,0,0)'] : 'rgba(0,0,0,0)';
+}
+
+async function loadAdvisories() {
+  try {
+    const data = await (await fetch('/api/advisories')).json();
+    state.advisories = data.items || {};
+    if (map.getLayer('sitrep-advisory-fill')) map.setPaintProperty('sitrep-advisory-fill', 'fill-color', advisoryColorExpr());
+    if (map.getLayer('sitrep-advisory-hatch')) {
+      const level3 = Object.entries(state.advisories).filter(([, a]) => a.level === 3).map(([iso2]) => iso2);
+      map.setFilter('sitrep-advisory-hatch', ['in', ['get', 'iso2'], ['literal', level3]]);
+    }
+    refreshAdvisoryCard();
+  } catch (err) {
+    console.error('advisory load failed', err);
+  }
+}
+
+async function addAdvisoryLayer() {
+  try {
+    const data = await (await fetch('vendor/countries.geojson')).json();
+    map.addSource('sitrep-countries', { type: 'geojson', data });
+    map.addLayer({
+      id: 'sitrep-advisory-fill', type: 'fill', source: 'sitrep-countries',
+      paint: {
+        'fill-color': advisoryColorExpr(),
+        // Natural Earth is coarser than the basemap, fade the tint out as you zoom in so mismatch never shows.
+        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 1, 9, 0.25],
+      },
+    }, map.getLayer('sitrep-state') ? 'sitrep-state' : undefined);
+    map.addImage('hatch-l3', hatchImage(), { pixelRatio: 2 });
+    map.addLayer({
+      id: 'sitrep-advisory-hatch', type: 'fill', source: 'sitrep-countries',
+      filter: ['in', ['get', 'iso2'], ['literal', []]],
+      paint: { 'fill-pattern': 'hatch-l3', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 1, 9, 0.25] },
+    }, map.getLayer('sitrep-state') ? 'sitrep-state' : undefined);
+    // A marker or embassy under the click wins, the country card is for the ground between them.
+    map.on('click', (e) => {
+      if (state.hidden.has('advisory')) return;
+      if (map.queryRenderedFeatures(e.point, { layers: ['sitrep-dot', 'sitrep-embassy'] }).length) return;
+      const hit = map.queryRenderedFeatures(e.point, { layers: ADV_LAYERS })[0];
+      const a = hit && state.advisories[hit.properties.iso2];
+      if (!a) return;
+      popup.setLngLat(e.lngLat).setHTML(advisoryPopup(a)).addTo(map);
+      popup.sitrepId = a.id;
+      keepPopupInView(popup);
+    });
+    if (state.hidden.has('advisory')) ADV_LAYERS.forEach((id) => map.setLayoutProperty(id, 'visibility', 'none'));
+    loadAdvisories();  // now the hatch layer exists, apply the Level 3 list
+  } catch (err) {
+    console.error('country polygons failed to load', err);
+  }
+}
+
+// The banner is the point: Level 3 and 4 must not be missed. Levels 1 and 2 stay quiet.
+function advisoryBanner(a) {
+  const loud = a.level >= 3;
+  return `<div class="adv-banner adv-${a.level}">${loud ? '⚠ ' : ''}${esc(LEVEL_NAME[a.level].toUpperCase())} · LEVEL ${a.level}</div>`;
+}
+
+// The State Dept's own sentence about embassy staffing or suspension, quoted. We do not turn it into a status.
+function embassyNoticeHtml(a) {
+  if (!a || !a.embassy_notice) return '';
+  // Say which advisory the sentence comes from. An old one may since have been replaced.
+  const date = a.timestamp ? new Date(a.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+  return `<div class="pop-note notice"><b>State Dept advisory${date ? ' of ' + esc(date) : ''} says</b> “${esc(a.embassy_notice)}”</div>`;
+}
+
+// If the live feed has been unreachable, say so. A stale advisory must not pass as current.
+function staleNoticeHtml(a) {
+  if (!a || !a.as_of) return '';
+  const hours = (Date.now() - Date.parse(a.as_of)) / 3.6e6;
+  if (!(hours > 12)) return '';
+  const when = new Date(a.as_of).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return `<div class="pop-note stale">The State Dept feed has been unreachable since ${esc(when)}. This may be out of date, check travel.state.gov.</div>`;
+}
+
+function advisoryPopup(a) {
+  const date = a.timestamp ? new Date(a.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+  const chips = (a.reasons || []).map((r) => `<span class="chip">${esc(r)}</span>`).join('');
+  const others = (a.entries || []).length > 1
+    ? `<div class="pop-row"><b>Separate advisories</b> ${a.entries.map((e) =>
+        `<a href="${esc(safeUrl(e.link))}" target="_blank" rel="noopener noreferrer">${esc(e.name)}</a>, Level ${e.level}`).join('; ')}</div>` : '';
+  return `<div class="pop-title">${esc(a.country)}</div>
+    ${advisoryBanner(a)}
+    ${a.summary ? `<div class="pop-row">${esc(a.summary)}</div>` : ''}
+    ${chips ? `<div class="chips">${chips}</div>` : ''}
+    ${a.changes ? `<div class="pop-note"><b>Latest update</b> ${esc(a.changes.length > 300 ? a.changes.slice(0, 300).replace(/\s\S*$/, '') + '...' : a.changes)}</div>` : ''}
+    ${a.excerpt ? `<div class="pop-note">${esc(a.excerpt)}</div>` : ''}
+    ${others}
+    ${embassyNoticeHtml(a)}
+    ${staleNoticeHtml(a)}
+    <div class="pop-note">US State Department${date ? ', updated ' + esc(date) : ''} ·
+      <a href="${esc(safeUrl(a.source_url))}" target="_blank" rel="noopener noreferrer">read the full advisory</a></div>`;
+}
+
+// Sidebar card for the country under the middle of the map.
+function refreshAdvisoryCard() {
+  const box = el('advisory');
+  if (!box || !map.getLayer('sitrep-advisory-fill') || state.hidden.has('advisory')) { if (box) box.hidden = true; return; }
+  const c = map.getContainer();
+  const hit = map.queryRenderedFeatures([c.clientWidth / 2, c.clientHeight / 2], { layers: ADV_LAYERS })[0];
+  const a = hit && state.advisories[hit.properties.iso2];
+  if (!a) { box.hidden = true; return; }
+  box.hidden = false;
+  box.className = `adv-card adv-card-${a.level}`;
+  box.innerHTML = `<div class="n-label">State Dept advisory</div>
+    <div class="n-name">${esc(a.country)}</div>
+    ${advisoryBanner(a)}`;
+  box.onclick = () => {
+    popup.setLngLat(map.getCenter()).setHTML(advisoryPopup(a)).addTo(map);
+    popup.sitrepId = a.id;
+    keepPopupInView(popup);
+  };
 }
 
 // The basemap tiles stop at states and provinces (admin level 4), so US county lines
@@ -129,7 +273,6 @@ function addFeatureLayers() {
   });
   applyLayerFilter();
 
-  const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px', offset: 10, focusAfterOpen: false });
   map.on('click', 'sitrep-dot', (e) => {
     const f = e.features[0];
     popup.setLngLat(f.geometry.coordinates).setHTML(incidentPopup(f.properties)).addTo(map);
@@ -233,6 +376,7 @@ function embassyPopup(p) {
   return `<div class="pop-title">★ ${esc(p.title)}</div>
     <div class="pop-meta ${p.status === 'active' ? '' : 'pop-warn'}">${esc(countryName(p.iso2))}${p.iso2 ? ' · ' : ''}${esc(STATUS_TEXT[p.status] || p.status)}</div>
     ${p.status_note ? `<div class="pop-note">${esc(p.status_note)}</div>` : ''}
+    ${state.advisories[p.iso2] ? `<div class="pop-row"><b>State Dept advisory</b>${advisoryBanner(state.advisories[p.iso2])}</div>${embassyNoticeHtml(state.advisories[p.iso2])}${staleNoticeHtml(state.advisories[p.iso2])}` : ''}
     <div class="pop-row"><b>Address</b> ${p.address ? esc(p.address) : 'not in the map data'}</div>
     <div class="pop-row"><b>Phone</b> ${phones.length ? phones.map(telLink).join(', ') : 'not in the map data'}${site ? ' · ' + site : ''}</div>
     <div class="pop-row"><b>State Dept, 24/7</b> ${telLink(OCS_ABROAD)} from abroad, ${telLink(OCS_US)} from the US or Canada</div>
@@ -251,14 +395,18 @@ function applyLayerFilter() {
 function renderLayers() {
   const box = el('layers');
   box.innerHTML = '';
-  [...state.layers].sort().forEach((layer) => {
+  [...new Set([...state.layers, 'advisory'])].sort().forEach((layer) => {
     const label = document.createElement('label');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = !state.hidden.has(layer);
     cb.addEventListener('change', () => {
       cb.checked ? state.hidden.delete(layer) : state.hidden.add(layer);
+      if (layer === 'advisory') {
+        ADV_LAYERS.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', cb.checked ? 'visible' : 'none'));
+      }
       applyLayerFilter();
+      refreshAdvisoryCard();
       refreshSidebar();
     });
     label.append(cb, ' ', LAYER_LABELS[layer] || layer);
@@ -296,6 +444,7 @@ function refreshSidebar() {
   clearTimeout(sideTimer);
   sideTimer = setTimeout(async () => {
     refreshNearest();
+    refreshAdvisoryCard();
     const q = new URLSearchParams({ ...viewBox(), limit: 100 });
     const res = await fetch('/api/headlines?' + q);
     const data = await res.json();
@@ -358,6 +507,8 @@ map.on('style.load', () => {
   map.setProjection({ type: 'globe' });
   tintWater();
   addBoundaries();
+  addAdvisoryLayer();
+  loadAdvisories();
   addCounties();
   addFeatureLayers();
   loadFeatures();
@@ -366,3 +517,4 @@ map.on('moveend', refreshSidebar);
 map.on('error', (e) => console.error('map error', e.error?.message || e));
 
 setInterval(loadFeatures, 5 * 60 * 1000);
+setInterval(loadAdvisories, 30 * 60 * 1000);

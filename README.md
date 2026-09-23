@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -28,7 +28,7 @@ Drop a file in `backend/plugins/` with a class named `Plugin` that extends `Sitr
 
 ## Status
 
-Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest and conflict, US embassies.
+Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest and conflict, US embassies, State Department travel advisories.
 
 ### About the Unrest layer
 
@@ -52,6 +52,19 @@ Notes:
 - Several event types at the same place share coordinates and stack on top of each other, so a click opens the top one. The sidebar lists all of them and the summary's "Nearby" line names the rest.
 - An optional local Ollama pass to smooth the wording is possible later. It would only rephrase these facts.
 
+### About the State Dept advisories
+
+Every country's State Department advisory, from travel.state.gov. Level 4 countries are tinted red. Level 3 countries are hatched orange like caution tape (any translucent orange on dark land turns brown). Level 1 and 2 are not drawn, Level 2 alone covers 80-odd countries including France and Mexico, but they show in the country card. Click any country for a card with the level, the headline sentence, the reasons the advisory gives (quoted, not paraphrased), the latest update note, and a link to the full text. A card at the top of the sidebar shows the advisory for the country under the middle of the map, and embassy popups show their host country's level.
+
+Where the advisory text mentions embassy staffing ("ordered departure", "suspended operations"), that sentence is quoted next to the embassy with the advisory's date. It is deliberately not turned into a status, the wording varies too much and a wrong automatic call on an embassy is worse than none. Compare it with `backend/data/embassy_status.json`.
+
+Things that will bite you if you touch this:
+- **The State Dept API is inconsistent.** Back-to-back requests return different payloads (216 to 225 entries) and alternate between a current state and one that is months old, apparently from replicas holding different data. The plugin asks four times per refresh, merges every advisory by its link keeping the newest `Updated`, merges that into the saved copy in `data/state_dept_raw.json`, and then keeps only the newest entry per country and name. Data only moves forward. It can take a couple of refreshes to see the newest copy of every advisory, and a freshly deleted `state_dept_raw.json` starts from whatever the first responses hold.
+- **It rate-limits.** Cloudflare answers 429 ("Just a moment...") if you hammer it. Each refresh is 4 requests of about 1 MB, spaced 4 seconds apart, every 6 hours, and it stops at the first 429. Do not loop it while testing. When the feed is unreachable the saved copy is served and every advisory carries an `as_of` time, the popup warns after 12 hours.
+- **Codes are FIPS, not ISO** (Iraq is IZ, Ukraine UP). `backend/data/countries.json` maps them and is built by `scripts/build_country_data.py` from Natural Earth. A few entries are patched by hand there because Natural Earth leaves FIPS blank.
+- **Sub-regions are separate advisories.** Gaza and the West Bank are tagged as Israel in the feed, and taking the highest level per tag would paint all of Israel Level 4, so they are matched by name and shown on the Palestine polygon. Israel stays at its own level. Hong Kong, Macau and a few Caribbean territories get the same treatment. Anything that cannot be placed is skipped and logged, never guessed.
+- **Polygons are Natural Earth 50m**, rounded to about 1 km. They are coarser than the basemap borders, so the tint fades out as you zoom in past zoom 5. Natural Earth's disputed-border choices are Natural Earth's.
+
 ### About the embassy stars
 
 Every operating US embassy is a gold star. Click one for the address, phone numbers, the embassy website and the State Department's 24/7 lines (+1 202-501-4444 from abroad, 1-888-407-4747 from the US or Canada). The card at the top of the sidebar shows the nearest operating embassy to the middle of the map. That distance is straight-line, not a route, so a river, a border or a closed road can make the real trip much longer.
@@ -66,8 +79,9 @@ Where it comes from and what to distrust:
 
 - [x] GDELT headlines for unrest and conflict, filtered by visible area
 - [ ] Unrest layer: fetch real article titles for the top places, and cut the capital-city dateline skew
-- [ ] Embassies: read suspended and ordered-departure status from State Dept alerts so the status file maintains itself, add consulates general, and check the phone numbers against usembassy.gov
-- [ ] Country cards: State Dept advisory level and alerts (red banner at Level 3 or 4), UK FCDO
+- [ ] Embassies: the advisory's staffing sentence is now quoted beside each embassy, but the status file is still hand-kept. Add consulates general, and check the phone numbers against usembassy.gov
+- [x] State Dept advisories: level tint, country card, red banner at Level 3 and 4
+- [ ] Advisories: place Gaza, West Bank and other sub-regions as their own areas, and add State Dept Alerts (the separate alert feed), plus UK FCDO as a second opinion
 - [ ] Trans traveler safety: Equaldex legal framework plus curated social climate notes, no single score
 - [ ] Vaccine and entry requirements per country (CDC Travelers' Health, WHO)
 - [ ] Health and outbreak alerts (WHO Disease Outbreak News, CDC travel notices)
@@ -90,4 +104,6 @@ Safety information about people is subjective and uneven. City and countryside c
 
 - Basemap tiles: [OpenFreeMap](https://openfreemap.org), OpenMapTiles schema, data from OpenStreetMap contributors. The map needs internet for now.
 - US county boundaries: US Census cartographic boundaries via [us-atlas](https://github.com/topojson/us-atlas) (ISC licence), decoded with topojson-client (ISC). Both are vendored in `frontend/vendor/`.
+- Country polygons: [Natural Earth](https://www.naturalearthdata.com) (public domain), simplified by `scripts/build_country_data.py`.
+- Travel advisories: US Department of State, travel.state.gov.
 - Earthquakes: USGS. Disasters: GDACS. Unrest: the GDELT Project. Embassies: OpenStreetMap contributors (ODbL) via Overpass.
