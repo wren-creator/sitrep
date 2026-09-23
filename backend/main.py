@@ -117,6 +117,7 @@ async def runner() -> None:
 async def lifespan(_app):
     init_db()
     facts_cache.set_db(db)
+    facts.lgbt.purge_old()  # Equaldex's terms cap how long we may keep its data
     PLUGINS.extend(load_plugins())
     task = asyncio.create_task(runner())
     yield
@@ -168,6 +169,21 @@ def headlines(west: float = Query(-180), south: float = Query(-90),
 async def travel_info(iso2: str = Query(..., pattern="^[A-Za-z]{2}$")):
     """Vaccines, health notices and entry rules for one country, fetched on demand and cached."""
     return await facts.travel_info(iso2.upper())
+
+
+@app.get("/api/lgbt")
+async def lgbt(iso2: str = Query(..., pattern="^[A-Za-z]{2}$")):
+    """LGBT+ information for one country: Equaldex index, trans legal status, UK FCDO advice."""
+    return await facts.lgbt_info(iso2.upper())
+
+
+@app.get("/api/lgbt-index")
+async def lgbt_index():
+    """Equaldex Equality Index for every country, for the map layer. Current values only, no history."""
+    try:
+        return await facts.lgbt.equaldex_index()
+    except facts.FactsError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/api/advisories")

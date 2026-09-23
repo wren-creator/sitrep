@@ -6,7 +6,7 @@ broken source is retried soon but never in a tight loop.
 """
 import asyncio
 
-from . import cache, cdc, entry, names
+from . import cache, cdc, entry, lgbt, names
 from .errors import FactsError
 
 PROVIDERS = {"health": cdc, "entry": entry}
@@ -34,3 +34,8 @@ async def travel_info(iso2: str) -> dict:
     shape = lambda r: ({"ok": True, "fetched_at": r["fetched_at"], **r["data"]} if r["ok"]  # noqa: E731
                        else {"ok": False, "fetched_at": r["fetched_at"], "error": r["data"].get("error", "unavailable")})
     return {"iso2": iso2, "country": names.display_name(iso2), "health": shape(health), "entry": shape(entry_rules)}
+
+
+async def lgbt_info(iso2: str) -> dict:
+    """LGBT+ information from three sources side by side. Each caches itself, see facts/lgbt.py."""
+    return {"iso2": iso2, "country": names.display_name(iso2), **await lgbt.fetch(iso2)}

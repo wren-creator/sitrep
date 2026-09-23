@@ -31,3 +31,10 @@ def fresh(row: dict | None, ttl: float, error_ttl: float = 900) -> bool:
     if not row:
         return False
     return time.time() - row["fetched_at"] < (ttl if row["ok"] else error_ttl)
+
+
+def purge(provider: str, max_age: float) -> int:
+    """Delete rows for a provider older than max_age seconds. Used where a source limits how long data may be kept."""
+    with _db() as c:
+        cur = c.execute("DELETE FROM country_facts WHERE provider = ? AND fetched_at < ?", (provider, time.time() - max_age))
+        return cur.rowcount
