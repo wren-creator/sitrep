@@ -1,8 +1,8 @@
-const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories', lgbt: 'LGBT+ index', airspace: '✈ Airspace' };
+const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories', lgbt: 'LGBT+ index', airspace: '✈ Airspace', aircraft: '✈ Aircraft (live)', military: 'Military aircraft' };
 const SEV_COLOR = { low: '#4aa3ff', medium: '#f2c14e', high: '#ff8a3d', critical: '#ff4d4d' };
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
 
-const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set(['lgbt']), advisories: {}, lgbtIndex: null, airspace: { items: [], byIso: {} } };
+const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set(['lgbt', 'aircraft', 'military']), advisories: {}, lgbtIndex: null, airspace: { items: [], byIso: {} } };
 
 // State Department Overseas Citizens Services, staffed around the clock.
 const OCS_ABROAD = '+1 202-501-4444';
@@ -135,7 +135,7 @@ async function addAdvisoryLayer() {
     addAirspaceLayers();
     loadAirspace().then(() => setAirspaceVisible(!state.hidden.has('airspace')));
     map.on('click', (e) => {
-      if (map.queryRenderedFeatures(e.point, { layers: ['sitrep-dot', 'sitrep-embassy'] }).length) return;
+      if (markerUnder(e.point)) return;
       if (!state.hidden.has('lgbt')) {  // the index layer is on, a click opens its country
         const lg = map.queryRenderedFeatures(e.point, { layers: ['sitrep-lgbt-fill'] })[0];
         if (lg && lg.properties.iso2) {
@@ -608,6 +608,13 @@ function addFeatureLayers() {
   });
 }
 
+// Markers that win a click over the country card underneath them. Aircraft layers exist only once aircraft.js has run.
+const MARKER_LAYERS = ['sitrep-dot', 'sitrep-embassy', 'sitrep-aircraft', 'sitrep-military', 'sitrep-ac-alert'];
+function markerUnder(point) {
+  const layers = MARKER_LAYERS.filter((id) => map.getLayer(id));
+  return layers.length ? map.queryRenderedFeatures(point, { layers }).length : 0;
+}
+
 function starImage(fill, stroke) {
   const size = 64;
   const c = document.createElement('canvas');
@@ -718,7 +725,7 @@ function applyLayerFilter() {
 function renderLayers() {
   const box = el('layers');
   box.innerHTML = '';
-  [...new Set([...state.layers, 'advisory', 'lgbt', 'airspace'])].sort().forEach((layer) => {
+  [...new Set([...state.layers, 'advisory', 'lgbt', 'airspace', 'aircraft', 'military'])].sort().forEach((layer) => {
     const label = document.createElement('label');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
@@ -740,6 +747,7 @@ function renderLayers() {
         setLgbtVisible(cb.checked);
       }
       if (layer === 'airspace') setAirspaceVisible(cb.checked);
+      if (layer === 'aircraft' || layer === 'military') setAircraftVisible(layer, cb.checked);
       if (layer === 'advisory' || layer === 'lgbt') renderLayers();           // keep both checkboxes honest
       applyLayerFilter();
       refreshAdvisoryCard();

@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/airspace`, `/api/trips`, `/api/alerts`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/airspace`, `/api/aircraft`, `/api/aircraft/watch`, `/api/aircraft/route`, `/api/trips`, `/api/alerts`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -132,6 +132,19 @@ Privacy: trips live only in your local SQLite file (`data/sitrep.db`, ignored by
 
 Limits worth knowing: the briefing is only as good as the layers behind it and says nothing about places they have no data for. A stop with no country code (a spot in open water, say) cannot be matched to an advisory and the card says so. Elections and currency are not in the briefing yet because those layers do not exist yet.
 
+### About live aircraft
+
+Turn on **Aircraft (live)** and zoom to about the size of a country. Aircraft appear as planes pointing along their heading, and clicking one shows its callsign, registration, type, altitude, speed and squawk code. **Show route** looks up the airline and where it is flying from and to, and draws the great circle between the two airports (the route, not the exact path flown). **Military aircraft** is a separate layer showing every aircraft currently flagged military worldwide.
+
+There is also a worldwide watch for aircraft squawking an emergency code (7500 hijack, 7600 radio failure, 7700 general emergency). When any exist a red strip appears with a link to each. **Most are medical or technical problems, not events**, and a hijack code is rare. Air ambulance flights are labelled but kept out of the watch, they are routine.
+
+**What this cannot see, and the layer says so:**
+- **Empty sky is not evidence that airspace is closed.** Positions come from ADS-B receivers that volunteers run, so coverage is thin over oceans, deserts and conflict zones. Compare with the EASA outlines for what is officially advised, not with an empty patch on this map.
+- **Military aircraft mostly do not appear.** The ones flagged military are those that do broadcast, mostly Western, so a count is not a measure of military activity anywhere, and I have deliberately not built any "surge" detection on it.
+- Not for navigation or anything safety-critical.
+
+Where the data comes from and how it is used (`backend/aircraft.py`): [adsb.lol](https://adsb.lol) for positions, whose API is open under ODbL 1.0 (credited in the legend), and adsbdb.com for routes by callsign. It is a community service, so every upstream request goes through one gate at least a second apart, area results are cached 12 seconds, the worldwide watch is cached a minute, routes a day, and the area query is capped at the 250 nautical mile radius the API allows. The page asks for a circle sized from what you are looking at and simply says "zoom in" when the view is too large, instead of making a request that cannot be satisfied. Polling only happens while a layer is on.
+
 ### About the embassy stars
 
 Every operating US embassy is a gold star. Click one for the address, phone numbers, the embassy website and the State Department's 24/7 lines (+1 202-501-4444 from abroad, 1-888-407-4747 from the US or Canada). The card at the top of the sidebar shows the nearest operating embassy to the middle of the map. That distance is straight-line, not a route, so a river, a border or a closed road can make the real trip much longer.
@@ -158,7 +171,8 @@ Where it comes from and what to distrust:
 - [ ] Currency and dollar strength per country (Frankfurter/ECB), 30 and 90 day trend
 - [x] Trip view: save destinations and dates, get a briefing per stop with warnings sorted to the top, and print it
 - [x] Airspace early warning: EASA Conflict Zone Information Bulletins as a layer, with NEW and REVISED tags and the history of earlier bulletins
-- [ ] Live aircraft and short flight trails from adsb.lol or OpenSky (free, no key). Caveat: community receivers, so no military traffic and thin coverage over conflict zones and oceans
+- [x] Live aircraft, routes on click, worldwide emergency squawk watch and military-flagged aircraft (adsb.lol, adsbdb.com)
+- [ ] Aircraft: short trails behind each aircraft from our own polls, and an emergency squawk near a saved trip stop as a trip alert
 - [ ] Airspace emptiness: compare live traffic over a region with our own rolling baseline to spot airlines rerouting. Needs days of samples first, and cannot tell a closure from missing receivers, so treat as the weakest signal
 - [ ] Airport delays and ground stops (FAA NAS status). Not available without registration: FAA NOTAMs. Blocked to non-browsers (403): the FAA prohibitions page
 - [ ] Stacked markers: markers at the same place overlap, let a click cycle through them or list them all
@@ -184,4 +198,5 @@ Safety information about people is subjective and uneven. City and countryside c
 - Airspace bulletins: European Union Aviation Safety Agency (EASA), easa.europa.eu, reproduced with the source acknowledged.
 - LGBT+ Equality Index: Equaldex (equaldex.com), used under its non-commercial API terms. Advice text: UK Foreign, Commonwealth and Development Office, Open Government Licence v3.0.
 - Vaccines and health notices: CDC Travelers' Health (wwwnc.cdc.gov/travel). Entry rules: Wikipedia contributors, CC BY-SA 4.0. Country name matching: pycountry.
+- Aircraft positions: adsb.lol contributors (ODbL 1.0). Routes and airlines: adsbdb.com.
 - Earthquakes: USGS. Disasters: GDACS. Unrest: the GDELT Project. Embassies: OpenStreetMap contributors (ODbL) via Overpass.

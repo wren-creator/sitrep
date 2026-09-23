@@ -193,3 +193,10 @@ main { position: relative; }
   .trips-main { overflow: visible; padding: 0; } .stop { break-inside: avoid; background: #fff; border-color: #999; color: #000; }
   .w, .alerts { background: #f4f4f4 !important; color: #000; } a { color: #000; }
 }
+
+/* Live aircraft */
+#air-alert { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; max-width: 70%; background: rgba(58,22,22,.96); border: 1px solid #ff4d4d; border-radius: 8px; padding: 6px 12px; font-size: 12.5px; }
+#air-alert a { color: #ffd0c8; font-weight: 600; }
+.ac-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+.ac-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; margin: 4px 0; }
+.ac-status { font-size: 12px; margin: 2px 0 6px; }
