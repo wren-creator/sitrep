@@ -134,16 +134,26 @@ Limits worth knowing: the briefing is only as good as the layers behind it and s
 
 ### About live aircraft
 
-Turn on **Aircraft (live)** and zoom to about the size of a country. Aircraft appear as planes pointing along their heading, and clicking one shows its callsign, registration, type, altitude, speed and squawk code. **Show route** looks up the airline and where it is flying from and to, and draws the great circle between the two airports (the route, not the exact path flown). **Military aircraft** is a separate layer showing every aircraft currently flagged military worldwide.
+Tick **Aircraft (live)**. From a wide view it zooms in for you, by as much as it takes to fit the 250 nautical mile circle the data allows, and planes appear pointing along their heading. Every aircraft in view gets a **trail** behind it, the path it has flown. **Click one** for its callsign, registration, type, altitude, speed and squawk, and:
 
-There is also a worldwide watch for aircraft squawking an emergency code (7500 hijack, 7600 radio failure, 7700 general emergency). When any exist a red strip appears with a link to each. **Most are medical or technical problems, not events**, and a hijack code is rare. Air ambulance flights are labelled but kept out of the watch, they are routine.
+- a **white line** for the path it has flown over roughly the last half hour, drawn as soon as you click
+- **Show route** for the airline and where it is flying from and to, drawn as a **dashed blue line** (the great circle between the airports, not the exact path) with a ring on each airport, and the map fits the whole flight on screen, since a route usually runs far outside the view
+
+The aircraft you click stays on the map even when zooming out to see its route would hide the live layer. **Military aircraft** is a separate layer showing every aircraft currently flagged military worldwide. A worldwide watch looks for aircraft squawking an emergency code (7500 hijack, 7600 radio failure, 7700 general emergency) and shows a red strip when any exist. **Most are medical or technical problems, not events**, and a hijack code is rare. Air ambulance flights are labelled but kept out of the watch, they are routine.
 
 **What this cannot see, and the layer says so:**
 - **Empty sky is not evidence that airspace is closed.** Positions come from ADS-B receivers that volunteers run, so coverage is thin over oceans, deserts and conflict zones. Compare with the EASA outlines for what is officially advised, not with an empty patch on this map.
 - **Military aircraft mostly do not appear.** The ones flagged military are those that do broadcast, mostly Western, so a count is not a measure of military activity anywhere, and I have deliberately not built any "surge" detection on it.
 - Not for navigation or anything safety-critical.
 
-Where the data comes from and how it is used (`backend/aircraft.py`): [adsb.lol](https://adsb.lol) for positions, whose API is open under ODbL 1.0 (credited in the legend), and adsbdb.com for routes by callsign. It is a community service, so every upstream request goes through one gate at least a second apart, area results are cached 12 seconds, the worldwide watch is cached a minute, routes a day, and the area query is capped at the 250 nautical mile radius the API allows. The page asks for a circle sized from what you are looking at and simply says "zoom in" when the view is too large, instead of making a request that cannot be satisfied. Polling only happens while a layer is on.
+Where the data comes from and how it is used (`backend/aircraft.py`): [adsb.lol](https://adsb.lol) for positions and recent tracks, whose API is open under ODbL 1.0 (credited in the legend), and adsbdb.com for routes by callsign. **It is a free community service and it will push back.** I learned that the hard way: while testing this it started answering `429 Too Many Requests`. So:
+- Requests are gentle by default: a position poll every 20 seconds while the layer is on, the worldwide watch every 2 minutes, and at most **two** new aircraft per poll seeded with their real recent track (a static file each), so the screen fills with true trails within a couple of minutes without a burst.
+- Live positions and the static trace files wait in **separate queues that share one pacing clock**, at least 1.5 seconds between any two requests. Separate queues mean trail seeding can never leave the live view stuck behind it (one position poll once took 8 seconds). The shared clock means the combined rate can never exceed the limit, my first version had two independent gates that could fire together at double the rate and that is what got me the 429s.
+- On a 429 the server honours `Retry-After` (30 seconds at least, 10 minutes at most), sends **nothing** upstream until it passes, and keeps serving the last good positions labelled stale ("positions 40 seconds old, the data service asked us to slow down"). Trail seeding pauses for two minutes when the service pushes back. This is tested against a mocked upstream, so it can be re-tested without touching the real service.
+- **It is not perfect.** In a two minute live run there were no slow-down messages at all until the worldwide watch fired its four requests, and then the service pushed back once and the cooldown handled it. The watch is the heaviest single burst, so if the messages bother you the first thing to lengthen is its interval (`refreshWatch` in `frontend/aircraft.js`, and the 2 minute cache in `backend/aircraft.py`).
+- Area results are cached 15 seconds, the watch 2 minutes, tracks a minute, routes a day. The page sizes its request from what you are looking at and says "zoom in" only if it cannot fit.
+
+Legends fold up when you click their title, and popups sit above them.
 
 ### About the embassy stars
 
@@ -172,7 +182,8 @@ Where it comes from and what to distrust:
 - [x] Trip view: save destinations and dates, get a briefing per stop with warnings sorted to the top, and print it
 - [x] Airspace early warning: EASA Conflict Zone Information Bulletins as a layer, with NEW and REVISED tags and the history of earlier bulletins
 - [x] Live aircraft, routes on click, worldwide emergency squawk watch and military-flagged aircraft (adsb.lol, adsbdb.com)
-- [ ] Aircraft: short trails behind each aircraft from our own polls, and an emergency squawk near a saved trip stop as a trip alert
+- [ ] Aircraft: an emergency squawk near a saved trip stop as a trip alert
+- [ ] Aircraft: make the worldwide watch lighter (it is the heaviest burst on adsb.lol), for example military every 5 minutes and emergencies every 2
 - [ ] Airspace emptiness: compare live traffic over a region with our own rolling baseline to spot airlines rerouting. Needs days of samples first, and cannot tell a closure from missing receivers, so treat as the weakest signal
 - [ ] Airport delays and ground stops (FAA NAS status). Not available without registration: FAA NOTAMs. Blocked to non-browsers (403): the FAA prohibitions page
 - [ ] Stacked markers: markers at the same place overlap, let a click cycle through them or list them all

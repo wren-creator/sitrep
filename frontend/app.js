@@ -609,7 +609,7 @@ function addFeatureLayers() {
 }
 
 // Markers that win a click over the country card underneath them. Aircraft layers exist only once aircraft.js has run.
-const MARKER_LAYERS = ['sitrep-dot', 'sitrep-embassy', 'sitrep-aircraft', 'sitrep-military', 'sitrep-ac-alert'];
+const MARKER_LAYERS = ['sitrep-dot', 'sitrep-embassy', 'sitrep-aircraft', 'sitrep-military', 'sitrep-ac-alert', 'sitrep-ac-selected'];
 function markerUnder(point) {
   const layers = MARKER_LAYERS.filter((id) => map.getLayer(id));
   return layers.length ? map.queryRenderedFeatures(point, { layers }).length : 0;

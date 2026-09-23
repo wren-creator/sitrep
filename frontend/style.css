@@ -200,3 +200,10 @@ main { position: relative; }
 .ac-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
 .ac-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; margin: 4px 0; }
 .ac-status { font-size: 12px; margin: 2px 0 6px; }
+
+/* Popups sit above the legends, and legends fold up when you click their title */
+.maplibregl-popup { z-index: 8; }
+.lg-legend-title { cursor: pointer; user-select: none; }
+.lg-legend-title::after { content: ' ▾'; color: var(--muted); font-size: 11px; }
+.legend-box.collapsed .lg-legend-title::after { content: ' ▸'; }
+.legend-box.collapsed > :not(.lg-legend-title) { display: none; }
