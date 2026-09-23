@@ -2,6 +2,7 @@
 import asyncio
 import importlib
 import json
+import logging
 import pkgutil
 import sqlite3
 import time
@@ -9,12 +10,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
+from datetime import date
+
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field, model_validator
 from fastapi.staticfiles import StaticFiles
 
 import brief
 import facts
 import lookup
+import trips
 import plugins as plugins_pkg
 from facts import cache as facts_cache
 from geo import haversine_km
@@ -23,12 +28,14 @@ ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "data" / "sitrep.db"
 FRONTEND = ROOT / "frontend"
 
+log = logging.getLogger("sitrep")
 SEV_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 def db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")  # so deleting a trip removes its stops, snapshots and alerts
     return conn
 
 
@@ -47,7 +54,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS country_facts (
             iso2 TEXT, provider TEXT, fetched_at REAL, ok INTEGER, json TEXT, PRIMARY KEY (iso2, provider)
         );
-        """)
+        """ + trips.SCHEMA)
 
 
 def load_plugins() -> list:
@@ -111,6 +118,10 @@ async def runner() -> None:
                 task = asyncio.create_task(refresh(p))
                 RUNNING[p.name] = task
                 task.add_done_callback(lambda _t, name=p.name: RUNNING.pop(name, None))
+        try:
+            trips.check_alerts()  # only reads local rows
+        except Exception:  # noqa: BLE001, a bad trip row must never stop the data refresh
+            log.exception("trip alert check failed")
         await asyncio.sleep(30)
 
 
@@ -119,6 +130,7 @@ async def lifespan(_app):
     init_db()
     facts_cache.set_db(db)
     lookup.set_db(db)
+    trips.set_db(db)
     facts.lgbt.purge_old()  # Equaldex's terms cap how long we may keep its data
     PLUGINS.extend(load_plugins())
     task = asyncio.create_task(runner())
@@ -248,7 +260,7 @@ async def geocode(q: str):
         return GEOCODE_CACHE[key]
     async with httpx.AsyncClient(timeout=15, headers={"User-Agent": "sitrep-personal/0.1"}) as client:
         r = await client.get("https://nominatim.openstreetmap.org/search",
-                             params={"q": q, "format": "jsonv2", "limit": 1})
+                             params={"q": q, "format": "jsonv2", "limit": 1, "addressdetails": 1})
         r.raise_for_status()
         hits = r.json()
     if not hits:
@@ -257,10 +269,116 @@ async def geocode(q: str):
     # Nominatim gives [south, north, west, east]. The map wants [west, south, east, north]
     # so a country, a state and a city each fit the screen at their own size.
     s, n, w, e = (float(x) for x in h["boundingbox"])
+    addr = h.get("address") or {}
     result = {"lat": float(h["lat"]), "lon": float(h["lon"]), "name": h.get("display_name"),
-              "bbox": [w, s, e, n]}
+              "bbox": [w, s, e, n], "iso2": (addr.get("country_code") or "").upper() or None, "country": addr.get("country")}
     GEOCODE_CACHE[key] = result
     return result
+
+
+class TripIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    notes: str = Field("", max_length=2000)
+
+
+class StopIn(BaseModel):
+    label: str = Field(min_length=1, max_length=160)
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    iso2: str | None = Field(None, pattern="^[A-Za-z]{2}$")
+    arrive: date | None = None
+    depart: date | None = None
+
+    @model_validator(mode="after")
+    def _in_order(self):
+        if self.arrive and self.depart and self.depart < self.arrive:
+            raise ValueError("depart is before arrive")
+        return self
+
+
+class StopEdit(BaseModel):
+    label: str = Field(min_length=1, max_length=160)
+    arrive: date | None = None
+    depart: date | None = None
+
+    @model_validator(mode="after")
+    def _in_order(self):
+        if self.arrive and self.depart and self.depart < self.arrive:
+            raise ValueError("depart is before arrive")
+        return self
+
+
+def _iso(d: date | None) -> str | None:
+    return d.isoformat() if d else None
+
+
+@app.get("/api/trips")
+def trips_list():
+    return {"trips": trips.list_trips(), "unseen_alerts": len(trips.list_alerts(unseen_only=True))}
+
+
+@app.post("/api/trips", status_code=201)
+def trips_create(body: TripIn):
+    return trips.get_trip(trips.create_trip(body.name, body.notes))
+
+
+@app.put("/api/trips/{trip_id}")
+def trips_update(trip_id: int, body: TripIn):
+    if not trips.update_trip(trip_id, body.name, body.notes):
+        raise HTTPException(status_code=404, detail="no such trip")
+    return trips.get_trip(trip_id)
+
+
+@app.delete("/api/trips/{trip_id}", status_code=204)
+def trips_delete(trip_id: int):
+    if not trips.delete_trip(trip_id):
+        raise HTTPException(status_code=404, detail="no such trip")
+
+
+@app.get("/api/trips/{trip_id}/briefing")
+def trips_briefing(trip_id: int):
+    """Everything the map knows about each stop, warnings ranked worst first. Local data only, so it is fast."""
+    result = trips.briefing(trip_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="no such trip")
+    return result
+
+
+@app.post("/api/trips/{trip_id}/stops", status_code=201)
+def stops_add(trip_id: int, body: StopIn):
+    stop_id = trips.add_stop(trip_id, body.label, body.lat, body.lon, body.iso2, _iso(body.arrive), _iso(body.depart))
+    if stop_id is None:
+        raise HTTPException(status_code=404, detail="no such trip")
+    return trips.get_trip(trip_id)
+
+
+@app.put("/api/stops/{stop_id}")
+def stops_update(stop_id: int, body: StopEdit):
+    if not trips.update_stop(stop_id, body.label, _iso(body.arrive), _iso(body.depart)):
+        raise HTTPException(status_code=404, detail="no such stop")
+    return {"ok": True}
+
+
+@app.delete("/api/stops/{stop_id}", status_code=204)
+def stops_delete(stop_id: int):
+    if not trips.delete_stop(stop_id):
+        raise HTTPException(status_code=404, detail="no such stop")
+
+
+@app.get("/api/alerts")
+def alerts_list(unseen: bool = False):
+    return {"alerts": trips.list_alerts(unseen_only=unseen)}
+
+
+class SeenIn(BaseModel):
+    ids: list[int] | None = None
+    trip_id: int | None = None
+
+
+@app.post("/api/alerts/seen")
+def alerts_seen(body: SeenIn):
+    """Mark alerts seen: the given ids, or every alert of a trip, or all of them."""
+    return {"marked": trips.mark_seen(body.ids, body.trip_id)}
 
 
 app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")
