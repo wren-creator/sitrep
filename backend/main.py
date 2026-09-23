@@ -73,11 +73,15 @@ async def refresh(plugin) -> None:
             c.execute("INSERT OR REPLACE INTO plugin_state VALUES (?,?,?,?,?)",
                       (plugin.name, time.time(), 1, None, len(feats)))
     except Exception as e:  # noqa: BLE001, one bad source must not stop the rest
+        # Retry in about 5 minutes (sooner if the TTL is shorter). Not every 30 seconds,
+        # which would hammer a struggling source, and not a full TTL, which for a weekly
+        # plugin would mean a week of nothing after one bad request.
+        retry_at = time.time() - plugin.cache_ttl_seconds + min(plugin.cache_ttl_seconds, 300)
         with db() as c:
             c.execute(
                 "INSERT INTO plugin_state (name, fetched_at, ok, error, count) VALUES (?,?,?,?,0) "
-                "ON CONFLICT(name) DO UPDATE SET ok=0, error=excluded.error",
-                (plugin.name, time.time(), 0, str(e)[:300]),
+                "ON CONFLICT(name) DO UPDATE SET fetched_at=excluded.fetched_at, ok=0, error=excluded.error",
+                (plugin.name, retry_at, 0, str(e)[:300]),
             )
 
 
