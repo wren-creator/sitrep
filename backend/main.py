@@ -260,7 +260,8 @@ async def geocode(q: str):
         return GEOCODE_CACHE[key]
     async with httpx.AsyncClient(timeout=15, headers={"User-Agent": "sitrep-personal/0.1"}) as client:
         r = await client.get("https://nominatim.openstreetmap.org/search",
-                             params={"q": q, "format": "jsonv2", "limit": 1, "addressdetails": 1})
+                             params={"q": q, "format": "jsonv2", "limit": 1, "addressdetails": 1,
+                                     "accept-language": "en"})  # else Amman comes back as عمان
         r.raise_for_status()
         hits = r.json()
     if not hits:
