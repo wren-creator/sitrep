@@ -171,6 +171,18 @@ async def travel_info(iso2: str = Query(..., pattern="^[A-Za-z]{2}$")):
     return await facts.travel_info(iso2.upper())
 
 
+@app.get("/api/airspace")
+def airspace():
+    """Active EASA conflict zone bulletins, worst first. Country-level, so they have no point of their own."""
+    with db() as c:
+        rows = c.execute("SELECT json FROM features WHERE layer = 'airspace'").fetchall()
+        st = c.execute("SELECT fetched_at, ok, error FROM plugin_state WHERE name = 'easa_czib'").fetchone()
+    items = [json.loads(r["json"])["properties"] for r in rows]
+    items.sort(key=lambda p: (p["kind"] != "do_not_operate", -(int((p.get("revised") or "0").replace("-", "")))))
+    return {"items": items, "fetched_at": st["fetched_at"] if st else None,
+            "ok": bool(st["ok"]) if st else False, "error": st["error"] if st else None}
+
+
 @app.get("/api/lgbt")
 async def lgbt(iso2: str = Query(..., pattern="^[A-Za-z]{2}$")):
     """LGBT+ information for one country: Equaldex index, trans legal status, UK FCDO advice."""
