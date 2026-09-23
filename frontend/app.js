@@ -250,7 +250,12 @@ function airTag(b) {
 }
 
 function airspaceHtml(iso2) {
-  return (state.airspace.byIso[iso2] || []).map((b) => {
+  return airspaceBlock(state.airspace.byIso[iso2] || []);
+}
+
+// Also used by the trip view, which already has the bulletins for a stop.
+function airspaceBlock(bulletins) {
+  return bulletins.map((b) => {
     const clip = (r, n) => (r.length > n ? r.slice(0, n - 3) + '...' : r);
     const first = b.recommendations.slice(0, 2).map((r) => `<div class="air-rec">“${esc(clip(r, 320))}”</div>`).join('');
     const rest = b.recommendations.slice(2).map((r) => `<div class="air-rec">“${esc(r)}”</div>`).join('');

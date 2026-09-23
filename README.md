@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/airspace`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/airspace`, `/api/trips`, `/api/alerts`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -116,6 +116,22 @@ How it works, and what to know before changing it (`backend/plugins/easa_czib.py
 - If the feed is unreachable the saved copy is served and carries an `as_of` time, the popup warns after 24 hours.
 - Earlier bulletins are matched by shared country or a shared region phrase in the title ("Persian Gulf"), using only the titles' own words.
 
+### About trips
+
+Press **Trips** in the header. A trip is a list of stops, each a place with arrive and depart dates. Search for a place, check that the one it found is the one you mean (it shows the full name it matched), and add it. Each stop then gets a card, built from the map's own data and ranked so the thing to worry about is at the top:
+
+- **Warnings, worst first**: the State Dept level and its reasons, EASA airspace bulletins (with "issued in the last 30 days" or "revised n days ago" called out), an embassy that is suspended or a note about its staffing, a nearest operating embassy more than 300 km away, and serious military conflict, civil unrest or disaster reports within 150 km. If nothing is flagged it says so, and adds that this is not a guarantee.
+- **Sections** you open when you want them: the advisory and airspace detail, the nearest embassies with address and phone, the reports within 150 km, and the vaccines and entry requirements and the LGBT+ information. Those last two load the first time you open them, so opening a trip does not fire a dozen slow requests, and they are cached.
+- **Print** gives a plain briefing to take with you.
+
+**Alerts.** Each stop's country is snapshotted (State Dept level, EASA bulletins, the advisory's embassy note, embassy status), and every 30 seconds the runner compares the latest with the last snapshot for any trip that has not ended. When something changes an alert is recorded, and the Trips button shows a red count until you mark them seen. It only reads rows already in the database, so it costs nothing. In-app only for now, there is no push, email or Slack.
+
+It is built not to cry wolf. A layer that has not loaded yet after a restart is left out of the comparison, so "not loaded" can never read as "the advisory was removed", and a cleared embassy note is not an alert. Ten cases covering this are worth re-running if you change `backend/trips.py` (`_diff`).
+
+Privacy: trips live only in your local SQLite file (`data/sitrep.db`, ignored by git). The only thing that leaves the machine is the place name sent to the OpenStreetMap geocoder when you search, requested in English so "Amman" is not stored as its Arabic spelling.
+
+Limits worth knowing: the briefing is only as good as the layers behind it and says nothing about places they have no data for. A stop with no country code (a spot in open water, say) cannot be matched to an advisory and the card says so. Elections and currency are not in the briefing yet because those layers do not exist yet.
+
 ### About the embassy stars
 
 Every operating US embassy is a gold star. Click one for the address, phone numbers, the embassy website and the State Department's 24/7 lines (+1 202-501-4444 from abroad, 1-888-407-4747 from the US or Canada). The card at the top of the sidebar shows the nearest operating embassy to the middle of the map. That distance is straight-line, not a route, so a river, a border or a closed road can make the real trip much longer.
@@ -140,15 +156,17 @@ Where it comes from and what to distrust:
 - [ ] Health and outbreak alerts as a map layer (CDC notices are already listed per country in the card, the RSS feed and WHO Disease Outbreak News would put them on the globe)
 - [ ] Elections calendar (IFES ElectionGuide, Wikidata, hand-curated overrides), flag anything inside 30 days
 - [ ] Currency and dollar strength per country (Frankfurter/ECB), 30 and 90 day trend
-- [ ] Trip view: save destinations and dates, get a one-screen briefing per stop with warnings sorted to the top
+- [x] Trip view: save destinations and dates, get a briefing per stop with warnings sorted to the top, and print it
 - [x] Airspace early warning: EASA Conflict Zone Information Bulletins as a layer, with NEW and REVISED tags and the history of earlier bulletins
-- [ ] Airspace: notify me when a new bulletin appears or one is revised (a trip alert, once trips exist)
 - [ ] Live aircraft and short flight trails from adsb.lol or OpenSky (free, no key). Caveat: community receivers, so no military traffic and thin coverage over conflict zones and oceans
 - [ ] Airspace emptiness: compare live traffic over a region with our own rolling baseline to spot airlines rerouting. Needs days of samples first, and cannot tell a closure from missing receivers, so treat as the weakest signal
 - [ ] Airport delays and ground stops (FAA NAS status). Not available without registration: FAA NOTAMs. Blocked to non-browsers (403): the FAA prohibitions page
 - [ ] Stacked markers: markers at the same place overlap, let a click cycle through them or list them all
 - [ ] Local Ollama summaries of each trip briefing (rewording verified facts only, never adding any)
-- [ ] Trip alerts: notify me when a saved trip's advisory level changes
+- [x] Trip alerts: in-app, when a saved trip's advisory level, EASA bulletins, or embassy note change
+- [ ] Trip alerts beyond the app: push, email or Slack, and a per-trip choice of which changes matter
+- [ ] "Add to trip" straight from a country card or embassy popup on the map, and dragging stops into order
+- [ ] Elections and currency in the trip briefing, once those layers exist, with the trip dates deciding what counts as "during your stay"
 - [ ] Per-city traffic (TomTom/HERE free tiers)
 - [ ] Self-host the basemap (Protomaps PMTiles, about 15 GB for North America) so it runs offline. Needs a different style, the Protomaps schema is not OpenMapTiles.
 - [ ] Second-level boundaries outside the US (districts, counties elsewhere), geoBoundaries ADM2 is the likely source

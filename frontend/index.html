@@ -14,6 +14,7 @@
       <input id="search" type="search" placeholder="Search a city or country, e.g. Manila" aria-label="Search">
     </form>
     <div id="layers"></div>
+    <button id="trips-btn" type="button" class="hdr-btn">Trips <span id="trips-badge" hidden></span></button>
   </header>
   <main>
     <div id="map"></div>
@@ -26,8 +27,17 @@
       <ul id="headlines"></ul>
     </aside>
   </main>
+  <section id="trips" hidden aria-label="Trips">
+    <aside class="trips-list">
+      <div class="trips-head"><h2>Trips</h2><button id="trips-close" type="button" class="hdr-btn">Close</button></div>
+      <form id="trip-new"><input name="name" maxlength="80" placeholder="New trip, e.g. Nairobi and Amman" aria-label="New trip name" required><button type="submit" class="hdr-btn">Create</button></form>
+      <ul id="trip-items"></ul>
+    </aside>
+    <div class="trips-main" id="trip-main"><div class="pop-note">Pick a trip, or create one.</div></div>
+  </section>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script src="vendor/topojson-client.min.js"></script>
   <script src="app.js"></script>
+  <script src="trips.js"></script>
 </body>
 </html>
