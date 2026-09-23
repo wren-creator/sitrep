@@ -7,13 +7,11 @@ I travel for work, and the information I need before I fly is spread over a doze
 ## Run it
 
 ```
-cd sitrep
-python3 -m venv .venv
-.venv/bin/pip install -r backend/requirements.txt
-cd backend && ../.venv/bin/uvicorn main:app --port 8765
+./start.sh    # sets up the venv on first run, then runs in the background
+./stop.sh
 ```
 
-Open http://localhost:8765. The first fetch of each source happens in the first few seconds.
+Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server.log`. The first fetch of each source happens in the first few seconds.
 
 ## How it works
 
