@@ -1,8 +1,8 @@
-const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories' };
+const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories', lgbt: 'LGBT+ index' };
 const SEV_COLOR = { low: '#4aa3ff', medium: '#f2c14e', high: '#ff8a3d', critical: '#ff4d4d' };
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
 
-const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set(), advisories: {} };
+const state = { features: [], byId: new Map(), layers: new Set(), hidden: new Set(['lgbt']), advisories: {}, lgbtIndex: null };
 
 // State Department Overseas Citizens Services, staffed around the clock.
 const OCS_ABROAD = '+1 202-501-4444';
@@ -131,9 +131,21 @@ async function addAdvisoryLayer() {
       paint: { 'fill-pattern': 'hatch-l3', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 1, 9, 0.25] },
     }, map.getLayer('sitrep-state') ? 'sitrep-state' : undefined);
     // A marker or embassy under the click wins, the country card is for the ground between them.
+    addLgbtLayer();
     map.on('click', (e) => {
-      if (state.hidden.has('advisory')) return;
       if (map.queryRenderedFeatures(e.point, { layers: ['sitrep-dot', 'sitrep-embassy'] }).length) return;
+      if (!state.hidden.has('lgbt')) {  // the index layer is on, a click opens its country
+        const lg = map.queryRenderedFeatures(e.point, { layers: ['sitrep-lgbt-fill'] })[0];
+        if (lg && lg.properties.iso2) {
+          popup.setLngLat(e.lngLat).setHTML(`<div class="pop-title">${esc(countryName(lg.properties.iso2) || lg.properties.name)}</div>` +
+            `<div class="pop-lgbt" data-iso="${esc(lg.properties.iso2)}"></div>`).addTo(map);
+          wireTravel(popup);
+          popup.getElement().querySelector('.pop-lgbt').loadNow?.();
+          popup.sitrepId = 'lgbt:' + lg.properties.iso2;
+        }
+        return;
+      }
+      if (state.hidden.has('advisory')) return;
       const hit = map.queryRenderedFeatures(e.point, { layers: ADV_LAYERS })[0];
       const a = hit && state.advisories[hit.properties.iso2];
       if (!a) return;
@@ -147,6 +159,57 @@ async function addAdvisoryLayer() {
   } catch (err) {
     console.error('country polygons failed to load', err);
   }
+}
+
+// LGBT+ index layer: Equaldex Equality Index, laws and public attitudes. Off by default. It is a country
+// tint like the advisories, so turning it on hides them and the other way round, two competing tints
+// would be unreadable. Current values only, Equaldex's terms ask that scores are not compared over time.
+const LGBT_BANDS = [[20, 'rgba(220,60,50,0.52)'], [40, 'rgba(235,130,40,0.5)'], [60, 'rgba(240,200,60,0.42)'],
+  [80, 'rgba(120,180,90,0.46)'], [101, 'rgba(50,190,110,0.52)']];
+
+function lgbtColorExpr() {
+  const rows = state.lgbtIndex?.rows;
+  if (!rows) return 'rgba(0,0,0,0)';
+  const stops = [];
+  for (const [iso2, r] of Object.entries(rows)) stops.push(iso2, LGBT_BANDS.find(([max]) => r.index < max)[1]);
+  return ['match', ['get', 'iso2'], ...stops, 'rgba(0,0,0,0)'];
+}
+
+function addLgbtLayer() {
+  map.addLayer({
+    id: 'sitrep-lgbt-fill', type: 'fill', source: 'sitrep-countries', layout: { visibility: 'none' },
+    paint: { 'fill-color': lgbtColorExpr(), 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 5, 1, 9, 0.3] },
+  }, map.getLayer('sitrep-state') ? 'sitrep-state' : undefined);
+}
+
+function lgbtLegendHtml() {
+  const names = ['0-19', '20-39', '40-59', '60-79', '80-100'];
+  return `<div class="lg-legend-title">LGBT+ Equality Index</div>
+    <div class="lg-legend-bar">${LGBT_BANDS.map(([, c], i) => `<span style="background:${c.replace(/0\.\d+\)/, '0.9)')}">${names[i]}</span>`).join('')}</div>
+    <div class="lg-legend-note">Laws and public attitudes, current values. Not a safety score, and it does not show risk on the street.
+      Data: <a href="https://www.equaldex.com/equality-index" target="_blank" rel="noopener noreferrer">Equaldex</a>. Click a country for detail.</div>`;
+}
+
+async function setLgbtVisible(on) {
+  const box = el('legend');
+  if (on && !state.lgbtIndex) {
+    try {
+      state.lgbtIndex = await (await fetch('/api/lgbt-index')).json();
+      if (map.getLayer('sitrep-lgbt-fill')) map.setPaintProperty('sitrep-lgbt-fill', 'fill-color', lgbtColorExpr());
+    } catch (err) {
+      console.error('LGBT+ index failed to load', err);
+      box.hidden = false;
+      box.innerHTML = '<div class="lg-legend-note">The Equaldex index could not be loaded right now. Try again in a moment.</div>';
+      return;
+    }
+  }
+  if (map.getLayer('sitrep-lgbt-fill')) map.setLayoutProperty('sitrep-lgbt-fill', 'visibility', on ? 'visible' : 'none');
+  box.hidden = !on;
+  if (on) box.innerHTML = lgbtLegendHtml();
+}
+
+function setAdvisoryVisible(on) {
+  ADV_LAYERS.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'));
 }
 
 // The banner is the point: Level 3 and 4 must not be missed. Levels 1 and 2 stay quiet.
@@ -206,27 +269,80 @@ function renderTravel(t) {
   return html;
 }
 
-function travelSectionHtml(iso2) {
-  return iso2 ? `<div class="pop-travel" data-iso="${esc(iso2)}"><button type="button" class="linkish">Vaccines and entry requirements</button></div>` : '';
+// LGBT+ information. Three sources side by side, deliberately not merged into one made-up score.
+function scoreBar(label, value) {
+  if (value == null) return `<div class="lg-row"><span>${esc(label)}</span><i class="lg-none">no data</i></div>`;
+  const tone = value < 34 ? 'low' : value < 67 ? 'mid' : 'high';
+  return `<div class="lg-row"><span>${esc(label)}</span><div class="lg-bar"><div class="lg-fill lg-${tone}" style="width:${value}%"></div></div><b>${value}</b></div>`;
 }
 
-// Attach the button in the open popup. The request is made only when it is clicked.
-function wireTravel(popupObj) {
-  const box = popupObj.getElement()?.querySelector('.pop-travel');
-  if (!box) return;
-  box.querySelector('button').addEventListener('click', async () => {
-    const iso2 = box.dataset.iso;
-    box.innerHTML = '<div class="pop-note">Loading, the first look-up for a country can take a few seconds...</div>';
-    try {
-      const res = await fetch('/api/travel-info?iso2=' + encodeURIComponent(iso2));
-      if (!res.ok) throw new Error(res.status);
-      box.innerHTML = renderTravel(await res.json());
-    } catch (err) {
-      box.innerHTML = '<div class="pop-note stale">Could not load this. Try again in a moment.</div>';
+function renderLgbt(d) {
+  let html = '<div class="pop-sub">LGBT+ (three sources, not a safety score)</div>';
+  const e = d.equaldex;
+  if (e.ok) {
+    html += `<div class="lg-box"><div class="lg-title">Equaldex Equality Index <b>${e.index}</b><small>/100</small></div>
+      ${scoreBar('Laws', e.legal)}${scoreBar('Public attitudes', e.opinion)}
+      <div class="pop-meta">Rank ${e.rank} of ${e.of}${e.opinion == null ? ' · no public opinion data for this country, the score is laws only' : ''}</div>
+      <div class="pop-meta">Data: <a href="${esc(safeUrl(e.source_url))}" target="_blank" rel="noopener noreferrer">Equaldex</a>. Current values, not a trend.</div></div>`;
+  } else {
+    html += `<div class="pop-note stale">Equaldex index unavailable: ${esc(e.error)}</div>`;
+  }
+
+  const t = d.trans_legal;
+  if (t.ok) {
+    html += `<div class="pop-row"><b>Legal gender change</b><span class="chip">${esc(t.status)}</span></div>
+      <div class="pop-note">From Wikipedia's <a href="${esc(safeUrl(t.source_url))}" target="_blank" rel="noopener noreferrer">legal status of transgender people</a>
+        (${esc(t.license)}, revision ${esc(t.revid)}), partly from the Spartacus Gay Travel Index. It is about whether a person can change legal gender.
+        It does not say whether living or dressing as your gender is tolerated or safe on the street.</div>`;
+  } else {
+    html += `<div class="pop-note stale">Legal gender change unavailable: ${esc(t.error)}</div>`;
+  }
+
+  const f = d.fcdo;
+  if (f.ok) {
+    const upd = f.updated ? new Date(f.updated).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+    if (f.paragraphs.length) {
+      html += `<div class="pop-sub">UK Foreign Office advice for LGBT+ travellers</div><div class="fcdo">` +
+        f.paragraphs.map((p) => (p.kind === 'li' ? `<div class="fc-li">• ${esc(p.text)}</div>` : `<p>${esc(p.text)}</p>`)).join('') +
+        `</div><div class="pop-note">Quoted from the <a href="${esc(safeUrl(f.url))}" target="_blank" rel="noopener noreferrer">UK FCDO travel advice</a>${upd ? ', updated ' + esc(upd) : ''}. It is written for UK travellers. Open Government Licence.</div>`;
+    } else {
+      html += `<div class="pop-note">The UK FCDO has no dedicated LGBT+ section for this country${upd ? ' (advice updated ' + esc(upd) + ')' : ''}. That is not a statement that nothing applies, read its <a href="${esc(safeUrl(f.url))}" target="_blank" rel="noopener noreferrer">full advice</a>.</div>`;
     }
-    box.scrollIntoView({ block: 'start', behavior: 'smooth' });  // the section is far down a long popup
-    keepPopupInView(popupObj);
-  });
+  } else {
+    html += `<div class="pop-note stale">UK FCDO advice unavailable: ${esc(f.error)}</div>`;
+  }
+  return html + `<div class="pop-note">None of these measures the risk to you on a given street. City and countryside differ, and a good score does not make every place safe or a low one every place dangerous. Check recent local reports before you go.</div>`;
+}
+
+function travelSectionHtml(iso2) {
+  if (!iso2) return '';
+  return `<div class="pop-travel" data-iso="${esc(iso2)}"><button type="button" class="linkish">Vaccines and entry requirements</button></div>
+    <div class="pop-lgbt" data-iso="${esc(iso2)}"><button type="button" class="linkish">LGBT+ safety</button></div>`;
+}
+
+// Attach the buttons in the open popup. Nothing is requested until one is pressed.
+function wireTravel(popupObj) {
+  const root = popupObj.getElement();
+  const hook = (selector, url, render) => {
+    const box = root?.querySelector(selector);
+    if (!box) return;
+    const load = async () => {
+      box.innerHTML = '<div class="pop-note">Loading, the first look-up for a country can take a few seconds...</div>';
+      try {
+        const res = await fetch(url + encodeURIComponent(box.dataset.iso));
+        if (!res.ok) throw new Error(res.status);
+        box.innerHTML = render(await res.json());
+      } catch (err) {
+        box.innerHTML = '<div class="pop-note stale">Could not load this. Try again in a moment.</div>';
+      }
+      box.scrollIntoView({ block: 'start', behavior: 'smooth' });  // the section is far down a long popup
+      keepPopupInView(popupObj);
+    };
+    box.querySelector('button')?.addEventListener('click', load);
+    box.loadNow = load;
+  };
+  hook('.pop-travel', '/api/travel-info?iso2=', renderTravel);
+  hook('.pop-lgbt', '/api/lgbt?iso2=', renderLgbt);
 }
 
 // The State Dept's own sentence about embassy staffing or suspension, quoted. We do not turn it into a status.
@@ -480,7 +596,7 @@ function applyLayerFilter() {
 function renderLayers() {
   const box = el('layers');
   box.innerHTML = '';
-  [...new Set([...state.layers, 'advisory'])].sort().forEach((layer) => {
+  [...new Set([...state.layers, 'advisory', 'lgbt'])].sort().forEach((layer) => {
     const label = document.createElement('label');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
@@ -488,8 +604,20 @@ function renderLayers() {
     cb.addEventListener('change', () => {
       cb.checked ? state.hidden.delete(layer) : state.hidden.add(layer);
       if (layer === 'advisory') {
-        ADV_LAYERS.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', cb.checked ? 'visible' : 'none'));
+        if (cb.checked) { state.hidden.add('lgbt'); setLgbtVisible(false); }   // one country tint at a time
+        setAdvisoryVisible(cb.checked);
       }
+      if (layer === 'lgbt') {
+        if (cb.checked) {
+          state.advisoriesHiddenByLgbt = !state.hidden.has('advisory');  // remember to bring them back
+          state.hidden.add('advisory'); setAdvisoryVisible(false);
+        } else if (state.advisoriesHiddenByLgbt) {
+          state.advisoriesHiddenByLgbt = false;
+          state.hidden.delete('advisory'); setAdvisoryVisible(true);
+        }
+        setLgbtVisible(cb.checked);
+      }
+      if (layer === 'advisory' || layer === 'lgbt') renderLayers();           // keep both checkboxes honest
       applyLayerFilter();
       refreshAdvisoryCard();
       refreshSidebar();

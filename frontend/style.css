@@ -107,3 +107,20 @@ main { display: flex; height: calc(100% - 55px); }
 .chip-not_recommended, .chip-routine { color: var(--muted); }
 .chip-info { color: var(--muted); }
 .pop-note a { color: #8fc1ff; }
+
+/* LGBT+ safety */
+main { position: relative; }
+#legend { position: absolute; left: 12px; bottom: 44px; width: 260px; z-index: 5; background: rgba(18,24,33,.94); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.lg-legend-title { font-weight: 600; font-size: 12.5px; margin-bottom: 5px; }
+.lg-legend-bar { display: flex; border-radius: 4px; overflow: hidden; }
+.lg-legend-bar span { flex: 1; text-align: center; font-size: 10.5px; color: #0b0f14; padding: 3px 0; font-weight: 600; }
+.lg-legend-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.lg-legend-note a { color: #8fc1ff; }
+.lg-box { background: #131b26; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 4px 0; }
+.lg-title { font-size: 13px; } .lg-title b { font-size: 22px; margin-left: 4px; } .lg-title small { color: var(--muted); }
+.lg-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 4px 0; }
+.lg-row span { width: 96px; color: var(--muted); } .lg-row b { width: 24px; text-align: right; } .lg-none { color: var(--muted); }
+.lg-bar { flex: 1; height: 8px; background: #1c2836; border-radius: 4px; overflow: hidden; }
+.lg-fill { height: 100%; } .lg-low { background: #ff4d4d; } .lg-mid { background: #f2c14e; } .lg-high { background: #4fd08a; }
+.fcdo { font-size: 12.5px; border-left: 3px solid #4aa3ff; padding-left: 9px; margin: 6px 0; }
+.fcdo p { margin: 0 0 6px; } .fc-li { margin: 0 0 4px 6px; }

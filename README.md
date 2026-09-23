@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/travel-info?iso2=`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -86,6 +86,20 @@ How it behaves, and why:
 - **The CDC covers Israel, the West Bank and Gaza on one page**, so Palestine shows the same page as Israel.
 - Adding another fact source (WHO, a country's own rules) is one file in `backend/facts/` with an async `fetch(iso2)`, registered in `backend/facts/__init__.py`.
 
+### About the LGBT+ information
+
+Press "LGBT+ safety" in any country card or embassy popup, or turn on the "LGBT+ index" layer to tint the whole map. It shows three sources side by side, and it deliberately does not add them into one made-up "safety score". Each measures something different, so an average would be a precise-looking number that means nothing.
+
+- **Equaldex Equality Index** (0 to 100): laws and public attitudes, shown as its two parts plus a rank. Equaldex publishes it as open JSON. About 22 countries (Tajikistan, North Korea, Fiji, the Vatican) have no public opinion data, so their score is laws only, and the card says so.
+- **Legal gender change**: Wikipedia's "Legal status of transgender people" table (partly from the Spartacus Gay Travel Index). Values like "permitted, with sterilization" show it is about whether a person can change legal gender. **It does not say whether living or dressing as your gender is tolerated or safe on the street**, and the card says that too. Crowd-edited, so treat it as a lead.
+- **UK Foreign Office advice**: the "LGBT+ travellers" section of the FCDO's travel advice, quoted as written (Open Government Licence). It states the legal position plainly, for example Uganda's Anti-Homosexuality Act and its penalties. It is written for UK travellers, and about a third of countries have no dedicated section, which the card says without implying nothing applies.
+
+None of these measures the risk to you on a given street. City and countryside differ, and a good score does not make every place safe or a low one every place dangerous.
+
+Equaldex's terms, which the code is built around: credit and link Equaldex wherever the index is shown (the layer's legend and the card both do), non-commercial use only, **do not store its data more than 30 days** (it is cached 7 days and anything older than 25 is deleted at startup, `facts/lgbt.py`), and **do not track the index over time or publish comparisons of historical scores**, because scores shift as their public opinion data improves, not because equality changed. So only the current value is kept, never a history. Their per-issue data (criminalisation of gender expression, for example) needs an API key and is not used yet.
+
+The map layer is a country tint like the advisories, so turning one on hides the other and turning it off brings them back.
+
 ### About the embassy stars
 
 Every operating US embassy is a gold star. Click one for the address, phone numbers, the embassy website and the State Department's 24/7 lines (+1 202-501-4444 from abroad, 1-888-407-4747 from the US or Canada). The card at the top of the sidebar shows the nearest operating embassy to the middle of the map. That distance is straight-line, not a route, so a river, a border or a closed road can make the real trip much longer.
@@ -103,7 +117,8 @@ Where it comes from and what to distrust:
 - [ ] Embassies: the advisory's staffing sentence is now quoted beside each embassy, but the status file is still hand-kept. Add consulates general, and check the phone numbers against usembassy.gov
 - [x] State Dept advisories: level tint, country card, red banner at Level 3 and 4
 - [ ] Advisories: place Gaza, West Bank and other sub-regions as their own areas, and add State Dept Alerts (the separate alert feed), plus UK FCDO as a second opinion
-- [ ] Trans traveler safety: Equaldex legal framework plus curated social climate notes, no single score
+- [x] LGBT+ information: Equaldex Equality Index, legal gender change, UK FCDO advice, no single score
+- [ ] Trans-specific: Equaldex per-issue data (needs a free API key) for criminalisation of gender expression and passport marker rules, plus Canada and Australia travel advice as further sources
 - [x] Vaccine and entry requirements per country (CDC Travelers' Health, Wikipedia visa table)
 - [ ] Entry: passport validity and blank pages from a sourced dataset, and the State Department's country pages if a permitted route exists
 - [ ] Health and outbreak alerts as a map layer (CDC notices are already listed per country in the card, the RSS feed and WHO Disease Outbreak News would put them on the globe)
@@ -128,5 +143,6 @@ Safety information about people is subjective and uneven. City and countryside c
 - US county boundaries: US Census cartographic boundaries via [us-atlas](https://github.com/topojson/us-atlas) (ISC licence), decoded with topojson-client (ISC). Both are vendored in `frontend/vendor/`.
 - Country polygons: [Natural Earth](https://www.naturalearthdata.com) (public domain), simplified by `scripts/build_country_data.py`.
 - Travel advisories: US Department of State, travel.state.gov.
+- LGBT+ Equality Index: Equaldex (equaldex.com), used under its non-commercial API terms. Advice text: UK Foreign, Commonwealth and Development Office, Open Government Licence v3.0.
 - Vaccines and health notices: CDC Travelers' Health (wwwnc.cdc.gov/travel). Entry rules: Wikipedia contributors, CC BY-SA 4.0. Country name matching: pycountry.
 - Earthquakes: USGS. Disasters: GDACS. Unrest: the GDELT Project. Embassies: OpenStreetMap contributors (ODbL) via Overpass.
