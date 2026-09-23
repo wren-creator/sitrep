@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 import brief
 import facts
+import lookup
 import plugins as plugins_pkg
 from facts import cache as facts_cache
 from geo import haversine_km
@@ -117,6 +118,7 @@ async def runner() -> None:
 async def lifespan(_app):
     init_db()
     facts_cache.set_db(db)
+    lookup.set_db(db)
     facts.lgbt.purge_old()  # Equaldex's terms cap how long we may keep its data
     PLUGINS.extend(load_plugins())
     task = asyncio.create_task(runner())
@@ -212,20 +214,7 @@ def advisories():
             "ok": bool(st["ok"]) if st else False, "error": st["error"] if st else None}
 
 
-def nearest_embassies(lat: float, lon: float, n: int = 1) -> list[dict]:
-    """Closest embassies that are operating, straight-line distance (not a driving route)."""
-    with db() as c:
-        rows = c.execute("SELECT json FROM features WHERE layer = 'embassy'").fetchall()
-    found = []
-    for r in rows:
-        f = json.loads(r["json"])
-        p = f["properties"]
-        if p.get("status") != "active":
-            continue
-        elon, elat = f["geometry"]["coordinates"]
-        found.append({**p, "lat": elat, "lon": elon, "km": round(haversine_km(lat, lon, elat, elon))})
-    found.sort(key=lambda x: x["km"])
-    return found[:n]
+nearest_embassies = lookup.nearest_embassies
 
 
 @app.get("/api/nearest-embassy")
@@ -244,19 +233,7 @@ async def brief_for(id: str):
     p = f["properties"]
     lon, lat = f["geometry"]["coordinates"]
 
-    # Cheap box first (about 2 degrees covers 150 km), then the exact distance.
-    with db() as c:
-        rows = c.execute(
-            "SELECT json FROM features WHERE layer != 'embassy' AND id != ? AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
-            (id, lat - 2, lat + 2, lon - 3, lon + 3),
-        ).fetchall()
-    nearby = []
-    for r in rows:
-        g = json.loads(r["json"])
-        glon, glat = g["geometry"]["coordinates"]
-        km = haversine_km(lat, lon, glat, glon)
-        if km <= brief.NEARBY_KM:
-            nearby.append({"title": g["properties"]["title"], "severity": g["properties"]["severity"], "km": round(km)})
+    nearby = lookup.nearby(lat, lon, brief.NEARBY_KM, exclude_id=id)
 
     title = await brief.page_title(p["source_url"]) if p["layer"] in brief.NEWS_LAYERS else None
     emb = nearest_embassies(lat, lon, 1)
