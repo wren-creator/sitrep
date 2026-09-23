@@ -15,7 +15,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 
 ## How it works
 
-- `frontend/`: globe.gl (Three.js) globe, layer toggles, sidebar, search. Plain JS, no build step.
+- `frontend/`: MapLibre GL JS with the globe projection, layer toggles, sidebar, search. Plain JS, no build step. Spin it as a globe, zoom to street level. Country and state lines come from the basemap tiles, US county lines from `frontend/vendor/counties-10m.json`.
 - `backend/main.py`: FastAPI. Runs each plugin on its own TTL, stores normalized features in SQLite (`data/sitrep.db`), and serves them. The browser only talks to this server, never to upstream APIs, so rate limits and API keys stay on the backend.
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
@@ -56,8 +56,15 @@ Things to know when reading it:
 - [ ] Local Ollama summaries of each trip briefing
 - [ ] Trip alerts: notify me when a saved trip's advisory level changes
 - [ ] Per-city traffic (TomTom/HERE free tiers)
-- [ ] Vendor globe.gl and textures locally so it runs offline
+- [ ] Self-host the basemap (Protomaps PMTiles, about 15 GB for North America) so it runs offline. Needs a different style, the Protomaps schema is not OpenMapTiles.
+- [ ] Second-level boundaries outside the US (districts, counties elsewhere), geoBoundaries ADM2 is the likely source
 
 ## Notes on data
 
 Safety information about people is subjective and uneven. City and countryside can be worlds apart, so this shows sources and dates rather than a single score. Check each source's terms before relying on it, and confirm health and entry requirements with the CDC or the embassy before you fly.
+
+## Data credits
+
+- Basemap tiles: [OpenFreeMap](https://openfreemap.org), OpenMapTiles schema, data from OpenStreetMap contributors. The map needs internet for now.
+- US county boundaries: US Census cartographic boundaries via [us-atlas](https://github.com/topojson/us-atlas) (ISC licence), decoded with topojson-client (ISC). Both are vendored in `frontend/vendor/`.
+- Earthquakes: USGS. Disasters: GDACS. Unrest: the GDELT Project.

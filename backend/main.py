@@ -153,9 +153,11 @@ async def geocode(q: str):
     if not hits:
         return {"lat": None, "lon": None}
     h = hits[0]
-    # Bigger places (countries, states) get a higher camera.
-    altitude = {"country": 1.8, "state": 1.3}.get(h.get("addresstype"), 0.7)
-    result = {"lat": float(h["lat"]), "lon": float(h["lon"]), "name": h.get("display_name"), "altitude": altitude}
+    # Nominatim gives [south, north, west, east]. The map wants [west, south, east, north]
+    # so a country, a state and a city each fit the screen at their own size.
+    s, n, w, e = (float(x) for x in h["boundingbox"])
+    result = {"lat": float(h["lat"]), "lon": float(h["lon"]), "name": h.get("display_name"),
+              "bbox": [w, s, e, n]}
     GEOCODE_CACHE[key] = result
     return result
 
