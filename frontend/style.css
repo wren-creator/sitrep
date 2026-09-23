@@ -1,0 +1,36 @@
+:root {
+  --bg: #0b0f14; --panel: #121821; --line: #223042; --text: #d8e2ee; --muted: #7f93a8;
+  --low: #4aa3ff; --medium: #f2c14e; --high: #ff8a3d; --critical: #ff4d4d;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
+header { display: flex; gap: 16px; align-items: center; padding: 10px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; letter-spacing: 3px; color: var(--high); }
+#search-form { flex: 1; max-width: 520px; }
+#search { width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); }
+#layers { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); }
+#layers label { cursor: pointer; user-select: none; }
+main { display: flex; height: calc(100% - 55px); }
+#globe { flex: 1; min-width: 0; }
+#sidebar { width: 360px; overflow-y: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 12px 14px; }
+#sidebar h2 { margin: 0 0 4px; font-size: 15px; }
+#side-meta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+#headlines { list-style: none; margin: 0; padding: 0; }
+#headlines li { padding: 10px 0 10px 12px; border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--low); margin-bottom: 2px; cursor: pointer; }
+#headlines li.medium { border-left-color: var(--medium); }
+#headlines li.high { border-left-color: var(--high); }
+#headlines li.critical { border-left-color: var(--critical); }
+#headlines li:hover { background: #172130; }
+.h-title { font-weight: 600; }
+.h-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.h-meta a { color: var(--muted); }
+.empty { color: var(--muted); padding: 12px 0; }
+@media (max-width: 760px) {
+  main { flex-direction: column; }
+  #sidebar { width: 100%; height: 40%; border-left: 0; border-top: 1px solid var(--line); }
+  #globe { height: 60%; flex: none; }
+}
