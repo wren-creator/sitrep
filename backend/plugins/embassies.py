@@ -135,7 +135,9 @@ class Plugin(SitrepPlugin):
                 st = next((s for s in statuses.values() if s.get("city") and s["city"].lower() in text), {})
             title = t.get("name:en") or "U.S. Embassy"
             # "Embassy of the United States" alone is ambiguous, add the city when the name lacks it.
-            if city and city.lower() not in title.lower():
+            # Only a Latin-script city. OSM's addr:city is the local spelling, and "Embassy of the United States,
+            # عمان" is worse than the name alone, the country is shown beside it anyway.
+            if city and all(ord(ch) < 0x250 for ch in city if ch.isalpha()) and city.lower() not in title.lower():
                 title = f"{title}, {city}"
             site = _website(t)
             out.append({
