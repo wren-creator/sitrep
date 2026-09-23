@@ -27,6 +27,7 @@ MIRRORS = [
 ]
 QUERY = '[out:json][timeout:60];nwr["diplomatic"="embassy"]["country"="US"];out center tags;'
 STATUS_FILE = Path(__file__).resolve().parent.parent / "data" / "embassy_status.json"
+CACHE_FILE = Path(__file__).resolve().parents[2] / "data" / "embassies_raw.json"  # last good Overpass download
 DIRECTORY = "https://www.usembassy.gov/"
 
 # Street number before the street name in these countries, after it almost everywhere else.
@@ -83,10 +84,15 @@ class Plugin(SitrepPlugin):
                     r.raise_for_status()
                     elements = r.json().get("elements", [])
                     if elements:
+                        CACHE_FILE.write_text(json.dumps(elements))
                         return elements
                 except (httpx.HTTPError, ValueError) as e:
                     last = e
-        raise RuntimeError(f"all Overpass mirrors failed: {last}")
+        # The public Overpass servers are often down. Embassies barely change, so the last
+        # good download is far better than an empty map, or an empty map after a restart.
+        if CACHE_FILE.exists():
+            return json.loads(CACHE_FILE.read_text())
+        raise RuntimeError(f"all Overpass mirrors failed and there is no saved copy: {last}")
 
     def normalize(self, raw):
         statuses = _statuses()
