@@ -125,7 +125,10 @@ Where it comes from and what to distrust:
 - [ ] Elections calendar (IFES ElectionGuide, Wikidata, hand-curated overrides), flag anything inside 30 days
 - [ ] Currency and dollar strength per country (Frankfurter/ECB), 30 and 90 day trend
 - [ ] Trip view: save destinations and dates, get a one-screen briefing per stop with warnings sorted to the top
-- [ ] Airport delays (FAA NAS status), live flights optional
+- [ ] Airspace early warning: EASA Conflict Zone Information Bulletins as a layer (dated, official, structured, active now for Jordan, Lebanon, Iraq, Iran, the Persian Gulf, Russia and Sudan). Flag anything issued or revised in the last 30 days. A signal, not a prediction, bulletins also reflect long-running conflicts
+- [ ] Live aircraft and short flight trails from adsb.lol or OpenSky (free, no key). Caveat: community receivers, so no military traffic and thin coverage over conflict zones and oceans
+- [ ] Airspace emptiness: compare live traffic over a region with our own rolling baseline to spot airlines rerouting. Needs days of samples first, and cannot tell a closure from missing receivers, so treat as the weakest signal
+- [ ] Airport delays and ground stops (FAA NAS status). Not available without registration: FAA NOTAMs. Blocked to non-browsers (403): the FAA prohibitions page
 - [ ] Stacked markers: markers at the same place overlap, let a click cycle through them or list them all
 - [ ] Local Ollama summaries of each trip briefing (rewording verified facts only, never adding any)
 - [ ] Trip alerts: notify me when a saved trip's advisory level changes
