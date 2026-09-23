@@ -203,7 +203,7 @@ async def aircraft_area(lat: float = Query(..., ge=-90, le=90), lon: float = Que
                         nm: float = Query(150, gt=0, le=1000)):
     """Live aircraft near a point from adsb.lol, cached a few seconds. Radius is capped at the API's 250 nm."""
     try:
-        return {"aircraft": await aircraft.in_area(lat, lon, nm), "as_of": time.time(), "radius_nm": min(nm, aircraft.MAX_RADIUS_NM)}
+        return {**await aircraft.in_area(lat, lon, nm), "radius_nm": min(nm, aircraft.MAX_RADIUS_NM)}
     except aircraft.AircraftError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -213,6 +213,24 @@ async def aircraft_watch():
     """Worldwide emergency squawks and military-flagged aircraft. Slow poll, cached a minute."""
     try:
         return await aircraft.watch()
+    except aircraft.AircraftError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/aircraft/trace")
+async def aircraft_trace(hex: str = Query(..., pattern="^[0-9a-fA-F]{6}$")):
+    """The path one aircraft has flown in about the last half hour (adsb.lol recent trace)."""
+    try:
+        return await aircraft.trace(hex)
+    except aircraft.AircraftError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/aircraft/traces")
+async def aircraft_traces(hexes: str = Query(..., pattern="^[0-9a-fA-F]{6}(,[0-9a-fA-F]{6}){0,3}$")):
+    """Recent tracks for up to four aircraft, used to seed the trails. Capped so it can never become a burst."""
+    try:
+        return {"traces": await aircraft.traces(hexes.split(","))}
     except aircraft.AircraftError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
