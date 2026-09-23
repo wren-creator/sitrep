@@ -31,6 +31,16 @@ map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left')
 const bySeverity = (critical, high, medium, low) =>
   ['match', ['get', 'severity'], 'critical', critical, 'high', high, 'medium', medium, low];
 
+// The dark style paints water near-black grey, which reads as muddy on the globe. Make it blue.
+const WATER = '#14497a';
+function tintWater() {
+  const set = (id, prop, value) => map.getLayer(id) && map.setPaintProperty(id, prop, value);
+  set('water', 'fill-color', WATER);
+  set('waterway', 'line-color', '#1d63a0');
+  set('water_name', 'text-color', '#b4d4ee');
+  set('water_name', 'text-halo-color', '#0b2a47');
+}
+
 function addBoundaries() {
   // Hide the style's own faint boundary lines, we draw stronger ones below.
   ['boundary_state', 'boundary_country_z0-4', 'boundary_country_z5-'].forEach((id) => {
@@ -301,6 +311,7 @@ el('search-form').addEventListener('submit', async (e) => {
 
 map.on('style.load', () => {
   map.setProjection({ type: 'globe' });
+  tintWater();
   addBoundaries();
   addCounties();
   addFeatureLayers();
