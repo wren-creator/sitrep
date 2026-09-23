@@ -28,11 +28,23 @@ Drop a file in `backend/plugins/` with a class named `Plugin` that extends `Sitr
 
 ## Status
 
-Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire).
+Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest and conflict.
+
+### About the Unrest layer
+
+This layer comes from the GDELT events export, which machine-codes news articles every 15 minutes. It measures how many independent outlets are reporting violence in a place over the last 24 hours. It does not verify that anything happened. Severity is a count of outlets (5, 10 and 20 outlets are the steps), not a danger score.
+
+Things to know when reading it:
+- Places are where the news is datelined, so capitals such as Washington, London and Moscow get pulled up. Treat those as "in the news" and read the source.
+- Country-level locations are dropped on purpose, they would pin a dot to the middle of a country.
+- Coercion events (sanctions, arrests, political pressure) are excluded. They were the biggest group and nearly all political news.
+- The first run backfills 24 hours (about 95 small files, a couple of seconds). After that it only fetches new files.
+- GDELT redirects plain http, so the plugin uses https, and the newest file often 404s for a few minutes. That is treated as "not yet", not as an error.
 
 ## Roadmap
 
-- [ ] GDELT headlines for unrest and conflict, filtered by visible area
+- [x] GDELT headlines for unrest and conflict, filtered by visible area
+- [ ] Unrest layer: fetch real article titles for the top places, and cut the capital-city dateline skew
 - [ ] Country cards: State Dept advisory level and alerts (red banner at Level 3 or 4), UK FCDO
 - [ ] Trans traveler safety: Equaldex legal framework plus curated social climate notes, no single score
 - [ ] Vaccine and entry requirements per country (CDC Travelers' Health, WHO)
