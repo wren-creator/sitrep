@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/nearest-embassy?lat&lon&n`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -40,6 +40,17 @@ Things to know when reading it:
 - Coercion events (sanctions, arrests, political pressure) are excluded. They were the biggest group and nearly all political news.
 - The first run backfills 24 hours (about 95 small files, a couple of seconds). After that it only fetches new files.
 - GDELT redirects plain http, so the plugin uses https, and the newest file often 404s for a few minutes. That is treated as "not yet", not as an error.
+
+### About the situation summary
+
+Click any incident marker and the popup fills in a short summary: how many outlets reported it and when, the lead headline from the source article, what else is reported within 150 km, and the nearest operating US embassy.
+
+It is not written by a language model, on purpose. The data behind a marker is thin (a place, an outlet count, an article link), so a model would mostly reword it and could invent detail, and this is a safety tool. Every line is a fact we hold. The lead headline is fetched from the article itself, which is also how you can tell a real conflict from a mislabelled one (a robbery arrest coded as "armed clashes" reads as one the moment you see the headline).
+
+Notes:
+- The headline fetch only follows public addresses. Article links come from a third-party feed, so anything that resolves to a private, loopback or link-local address (including through a redirect) is refused. Known gap: the address is checked and then the HTTP client resolves the name again, so a hostile DNS server could in theory race the check. The server only listens on localhost, so that is acceptable today. Pin the resolved address before exposing this beyond your own machine.
+- Several event types at the same place share coordinates and stack on top of each other, so a click opens the top one. The sidebar lists all of them and the summary's "Nearby" line names the rest.
+- An optional local Ollama pass to smooth the wording is possible later. It would only rephrase these facts.
 
 ### About the embassy stars
 
@@ -64,7 +75,8 @@ Where it comes from and what to distrust:
 - [ ] Currency and dollar strength per country (Frankfurter/ECB), 30 and 90 day trend
 - [ ] Trip view: save destinations and dates, get a one-screen briefing per stop with warnings sorted to the top
 - [ ] Airport delays (FAA NAS status), live flights optional
-- [ ] Local Ollama summaries of each trip briefing
+- [ ] Stacked markers: markers at the same place overlap, let a click cycle through them or list them all
+- [ ] Local Ollama summaries of each trip briefing (rewording verified facts only, never adding any)
 - [ ] Trip alerts: notify me when a saved trip's advisory level changes
 - [ ] Per-city traffic (TomTom/HERE free tiers)
 - [ ] Self-host the basemap (Protomaps PMTiles, about 15 GB for North America) so it runs offline. Needs a different style, the Protomaps schema is not OpenMapTiles.

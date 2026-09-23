@@ -9,9 +9,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 
+import brief
 import plugins as plugins_pkg
 from geo import haversine_km
 
@@ -175,6 +176,36 @@ def nearest_embassies(lat: float, lon: float, n: int = 1) -> list[dict]:
 @app.get("/api/nearest-embassy")
 def nearest_embassy(lat: float, lon: float, n: int = Query(1, ge=1, le=5)):
     return {"items": nearest_embassies(lat, lon, n)}
+
+
+@app.get("/api/brief")
+async def brief_for(id: str):
+    """A short, facts-only summary for one marker, with the nearest operating embassy."""
+    with db() as c:
+        row = c.execute("SELECT json FROM features WHERE id = ?", (id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="unknown feature")
+    f = json.loads(row["json"])
+    p = f["properties"]
+    lon, lat = f["geometry"]["coordinates"]
+
+    # Cheap box first (about 2 degrees covers 150 km), then the exact distance.
+    with db() as c:
+        rows = c.execute(
+            "SELECT json FROM features WHERE layer != 'embassy' AND id != ? AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+            (id, lat - 2, lat + 2, lon - 3, lon + 3),
+        ).fetchall()
+    nearby = []
+    for r in rows:
+        g = json.loads(r["json"])
+        glon, glat = g["geometry"]["coordinates"]
+        km = haversine_km(lat, lon, glat, glon)
+        if km <= brief.NEARBY_KM:
+            nearby.append({"title": g["properties"]["title"], "severity": g["properties"]["severity"], "km": round(km)})
+
+    title = await brief.page_title(p["source_url"]) if p["layer"] == "conflict" else None
+    emb = nearest_embassies(lat, lon, 1)
+    return brief.build(p, title, nearby, emb[0] if emb else None)
 
 
 @app.get("/api/geocode")

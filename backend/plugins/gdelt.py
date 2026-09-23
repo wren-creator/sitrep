@@ -124,6 +124,8 @@ class Plugin(SitrepPlugin):
                     "id": f"gdelt:{root}:{lat}:{lon}",
                     "layer": self.layer,
                     "severity": severity,
+                    "kind": label,
+                    "outlets": len(outlets),
                     "title": f"{label} reported near {top[3]}",
                     "summary": f"{len(outlets)} outlets in the last {WINDOW_HOURS}h. Machine-coded from news "
                                f"and datelined places can skew toward capitals, so verify at the source.",

@@ -55,3 +55,12 @@ main { display: flex; height: calc(100% - 55px); }
 #nearest .n-label { color: #ffc83d; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
 #nearest .n-name { font-weight: 600; margin-top: 2px; }
 #nearest .n-meta { color: var(--muted); font-size: 12px; }
+
+/* Situation summary in incident popups */
+.maplibregl-popup-content { max-height: 70vh; overflow-y: auto; }
+.pop-sub { margin-top: 8px; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.pop-lead { margin-top: 4px; font-size: 13px; }
+.pop-lead a { color: #8fc1ff; }
+.pop-lead .pop-meta { display: block; }
+.pop-lines { margin: 6px 0 0; padding-left: 16px; font-size: 12.5px; color: var(--text); }
+.pop-lines li { margin-bottom: 3px; }

@@ -133,12 +133,16 @@ function addFeatureLayers() {
   map.on('click', 'sitrep-dot', (e) => {
     const f = e.features[0];
     popup.setLngLat(f.geometry.coordinates).setHTML(incidentPopup(f.properties)).addTo(map);
+    popup.sitrepId = f.properties.id;
+    loadBrief(popup, f.properties.id);
   });
   map.on('click', 'sitrep-embassy', (e) => {
     const f = e.features[0];
     // MapLibre flattens list properties (phones) to strings, so use our own copy of the feature.
     const full = state.byId.get(f.properties.id)?.properties || f.properties;
     popup.setLngLat(f.geometry.coordinates).setHTML(embassyPopup(full)).addTo(map);
+    popup.sitrepId = f.properties.id;
+    keepPopupInView(popup);
   });
   ['sitrep-dot', 'sitrep-embassy'].forEach((id) => {
     map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -164,6 +168,20 @@ function starImage(fill, stroke) {
   return g.getImageData(0, 0, size, size);
 }
 
+// "UA" -> "Ukraine". Some embassies have no city in the map data, the country is what tells them apart.
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+function countryName(iso2) {
+  try { return iso2 ? regionNames.of(iso2) : ''; } catch { return iso2 || ''; }
+}
+
+// A popup grows upward when the summary loads and can end up above the map edge. Nudge the map down.
+function keepPopupInView(popup) {
+  const pr = popup.getElement()?.getBoundingClientRect();
+  if (!pr) return;
+  const over = map.getContainer().getBoundingClientRect().top + 8 - pr.top;
+  if (over > 0) map.panBy([0, -over], { duration: 300 });
+}
+
 const telHref = (n) => 'tel:' + String(n).replace(/[^\d+]/g, '');
 const telLink = (n) => `<a href="${esc(telHref(n))}">${esc(n)}</a>`;
 
@@ -172,7 +190,34 @@ function incidentPopup(p) {
   return `<div class="pop-title">${esc(p.title)}</div>
     <div class="pop-meta">${esc(p.layer)} · ${esc(p.severity)} · ${esc(when)} ·
       <a href="${esc(safeUrl(p.source_url))}" target="_blank" rel="noopener noreferrer">source</a></div>
-    <div class="pop-note">${esc(p.summary)}</div>`;
+    ${p.layer === 'conflict' ? '' : `<div class="pop-note">${esc(p.summary)}</div>`}
+    <div class="pop-brief pop-note">Loading summary...</div>`;
+}
+
+// A short, facts-only summary from /api/brief: how widely it was reported, the lead headline,
+// what else is nearby, and the nearest operating embassy.
+async function loadBrief(popup, id) {
+  const put = (html) => {
+    const box = popup.getElement()?.querySelector('.pop-brief');
+    if (box && popup.sitrepId === id) { box.className = 'pop-brief'; box.innerHTML = html; keepPopupInView(popup); }
+  };
+  try {
+    const res = await fetch('/api/brief?id=' + encodeURIComponent(id));
+    if (!res.ok) throw new Error(res.status);
+    const b = await res.json();
+    const lead = b.headline
+      ? `<div class="pop-lead">Lead coverage: <a href="${esc(safeUrl(b.headline.url))}" target="_blank" rel="noopener noreferrer">${esc(b.headline.title)}</a>
+           <span class="pop-meta">${esc(b.headline.domain)}</span></div>` : '';
+    const lines = [...b.lines];
+    // Slot the embassy in before the closing caveat.
+    const emb = b.embassy
+      ? `Nearest operating US embassy: ${b.embassy.title}${b.embassy.iso2 ? ', ' + countryName(b.embassy.iso2) : ''}, ${b.embassy.km.toLocaleString()} km straight-line.`
+      : 'No operating US embassy in the data.';
+    lines.splice(lines.length - 1, 0, emb);
+    put(`<div class="pop-sub">Situation</div>${lead}<ul class="pop-lines">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`);
+  } catch (err) {
+    put('<div class="pop-note">Summary unavailable.</div>');
+  }
 }
 
 const STATUS_TEXT = {
@@ -186,7 +231,7 @@ function embassyPopup(p) {
   const site = p.website
     ? `<a href="${esc(safeUrl(p.website))}" target="_blank" rel="noopener noreferrer">embassy website</a>` : '';
   return `<div class="pop-title">★ ${esc(p.title)}</div>
-    <div class="pop-meta ${p.status === 'active' ? '' : 'pop-warn'}">${esc(p.iso2 || '')} · ${esc(STATUS_TEXT[p.status] || p.status)}</div>
+    <div class="pop-meta ${p.status === 'active' ? '' : 'pop-warn'}">${esc(countryName(p.iso2))}${p.iso2 ? ' · ' : ''}${esc(STATUS_TEXT[p.status] || p.status)}</div>
     ${p.status_note ? `<div class="pop-note">${esc(p.status_note)}</div>` : ''}
     <div class="pop-row"><b>Address</b> ${p.address ? esc(p.address) : 'not in the map data'}</div>
     <div class="pop-row"><b>Phone</b> ${phones.length ? phones.map(telLink).join(', ') : 'not in the map data'}${site ? ' · ' + site : ''}</div>
@@ -285,7 +330,7 @@ async function refreshNearest() {
     box.hidden = false;
     box.innerHTML = `<div class="n-label">★ Nearest operating US embassy</div>
       <div class="n-name">${esc(hit.title)}</div>
-      <div class="n-meta">${esc(hit.km.toLocaleString())} km straight-line from the middle of the map${hit.iso2 ? ' · ' + esc(hit.iso2) : ''}</div>`;
+      <div class="n-meta">${esc(hit.km.toLocaleString())} km straight-line from the middle of the map${hit.iso2 ? ' · ' + esc(countryName(hit.iso2)) : ''}</div>`;
     box.onclick = () => map.flyTo({ center: [hit.lon, hit.lat], zoom: 11, duration: 1400 });
   } catch (err) {
     box.hidden = true;
