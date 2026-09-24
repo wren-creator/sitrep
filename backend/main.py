@@ -192,7 +192,7 @@ def weather():
     Each shape carries its parent's id and severity, and `part` says what it is (cone, track, fcst, warning...)."""
     with db() as c:
         rows = c.execute("SELECT json FROM features WHERE layer = 'weather'").fetchall()
-        st = c.execute("SELECT name, fetched_at, ok, error FROM plugin_state WHERE name IN ('nhc', 'wpc_rain', 'nws_alerts')").fetchall()
+        st = c.execute("SELECT name, fetched_at, ok, error FROM plugin_state WHERE name IN ('nhc', 'wpc_rain', 'nws_alerts', 'wpc_snow', 'wpc_lows')").fetchall()
     shapes = []
     for r in rows:
         p = json.loads(r["json"])["properties"]

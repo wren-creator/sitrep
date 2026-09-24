@@ -157,11 +157,13 @@ Legends fold up when you click their title, and popups sit above them.
 
 ### About the weather layer
 
-On by default. Four things, all from NOAA and all free:
+On by default. Six things, all from NOAA and all free:
 
 - **Tropical storms**, from the National Hurricane Center (Atlantic, Eastern Pacific) and the Central Pacific Hurricane Center (Hawaii). Each active storm is a ringed dot with its name, coloured by strength. Around it: the forecast **cone** (white), the forecast **track** (dashed) with the forecast wind at each day, where it has **been** (dotted), and **watches and warnings** along the coast (yellow tropical storm watch, blue warning, pink hurricane watch, red warning). Click for wind, pressure, movement and a link to the full advisory and forecast discussion.
 - **Areas where a storm may form**, NHC's seven-day outlook: dashed yellow, orange or red blobs with the chance of formation in 2 and 7 days. Nothing has formed yet, and these move around from one update to the next.
 - **National Weather Service watches and warnings** for the wind, water and snow side of a storm: storm, gale and hurricane force wind warnings at sea, high wind, coastal flood, storm surge, winter storm, blizzard, flash flood and hazardous seas. Solid outline is a warning (happening or expected), dashed is a watch (possible). This is the wind and coastal flooding of a nor'easter, and the rain layer below is its rain.
+- **Low pressure centres**, a purple **L** with its pressure in millibars, from WPC's coded surface bulletins. The dashed line is WPC's forecast path with the forecast pressure at each stop. A lower number is a stronger storm and a number that falls fast is one that is strengthening, which is what a nor'easter does. Click for the pressures in order and whether it is deepening or filling.
+- **Snow**, WPC's national forecast chart, days 1 to 3: pale areas where snow is forecast, brighter with a strong outline where heavy snow is possible. It is empty out of season (the service returns a placeholder with no shape, which is skipped), so nothing here in September means no snow is forecast, not that it broke.
 - **Heavy rain**, the Weather Prediction Center's Excessive Rainfall Outlook for days 1 to 5. This is what shows a big coastal storm (a nor'easter) building days ahead as a flood risk over the region. Only Slight (15%) and worse are kept, Marginal is a 1 in 20 chance and would bury the map.
 
 How to read it, and what it is not:
@@ -171,7 +173,13 @@ How to read it, and what it is not:
 - Tropical cyclones outside NHC's areas (West Pacific typhoons, Indian Ocean) are not in this layer, the Disasters layer carries those through GDACS.
 - This is a map, not a warning service. Read the advisory before you act on it.
 
-Where it comes from (`backend/plugins/nhc.py`, `backend/plugins/wpc_rain.py`, `backend/plugins/nws_alerts.py`): NOAA's public map services and `CurrentStorms.json`. The alerts come from NOAA's WWA map service, which publishes every active alert already drawn as polygons. api.weather.gov alerts mostly carry a list of zones and no shape, which would take hundreds of extra requests, so it is not used. Both plugins look layer ids up by name each refresh, since NOAA renumbers them when it reworks a service, and fail loudly if a name is missing rather than showing half a storm. NHC refreshes every 30 minutes, WPC every hour and alerts every 10 minutes (they change fast in a storm), the requests are spaced 0.3 seconds apart, and if a source fails its last good data stays and the legend says so. Shapes ride in each feature's private `_shape` and are served by `/api/weather`, stripped from `/api/features` and `/api/headlines`.
+Things to know about the lows (`backend/plugins/wpc_lows.py`):
+- **The forecast only reaches about 30 hours.** The bulletin has the current analysis plus 12 and 24 hour forecasts, that is as far as WPC's coded map goes. A storm three days out shows in the rain and alert layers first and as an L later.
+- **Only lows that reach 1004 mb or lower are drawn.** The analysis has 20-odd lows at any time and most are shallow heat lows over the Rockies. Change `MAX_MB` if that is wrong for you.
+- **Tracks are a guess.** WPC does not number its lows, so each is linked to the nearest low in the next map (at most 90 km/h, at most 25 mb change). A track can break or, rarely, jump to the wrong low, and the popup lists the pressures in order so a bad link shows.
+- The bulletins are plain text, positions are latitude then west longitude in whole degrees ("3470" is 34N 70W). A bulletin that stops parsing raises an error, so a format change shows as a failing source and not an empty map. The month and year are not in the bulletin, so they are taken as the nearest date to now. Parsing is checked against the live bulletins, and the snow path was tested with a synthetic polygon because there was no snow to test with.
+
+Where it comes from (`backend/plugins/nhc.py`, `wpc_rain.py`, `wpc_snow.py`, `wpc_lows.py`, `nws_alerts.py`): NOAA's public map services and `CurrentStorms.json`. The alerts come from NOAA's WWA map service, which publishes every active alert already drawn as polygons. api.weather.gov alerts mostly carry a list of zones and no shape, which would take hundreds of extra requests, so it is not used. Both plugins look layer ids up by name each refresh, since NOAA renumbers them when it reworks a service, and fail loudly if a name is missing rather than showing half a storm. NHC refreshes every 30 minutes, WPC every hour and alerts every 10 minutes (they change fast in a storm), the requests are spaced 0.3 seconds apart, and if a source fails its last good data stays and the legend says so. Shapes ride in each feature's private `_shape` and are served by `/api/weather`, stripped from `/api/features` and `/api/headlines`.
 
 ### About the embassy stars
 
@@ -212,7 +220,8 @@ Where it comes from and what to distrust:
 - [ ] Elections and currency in the trip briefing, once those layers exist, with the trip dates deciding what counts as "during your stay"
 - [x] Weather: tropical storms with cone, track and warnings (NHC, CPHC), storm formation areas, heavy rain forecast days 1 to 5 (WPC)
 - [x] Weather: National Weather Service watches and warnings (wind, coastal flood, storm surge, winter storm, flash flood, seas) as polygons
-- [ ] Weather: WPC forecast low pressure centres and heavy snow areas, a way to name a system ("nor'easter") which no feed here does, alert text in the popup, and a place name for each alert group instead of coordinates, and a storm near a saved trip stop as a trip alert
+- [x] Weather: low pressure centres with pressure and a short forecast path, and forecast snow areas (WPC)
+- [ ] Weather: lows and snow further out than about 30 hours (WPC's medium range products are images, not data, so this needs another source), a way to name a system ("nor'easter") which no feed here does, alert text in the popup, and a place name for each alert group instead of coordinates, and a storm near a saved trip stop as a trip alert
 - [ ] Per-city traffic (TomTom/HERE free tiers)
 - [ ] Self-host the basemap (Protomaps PMTiles, about 15 GB for North America) so it runs offline. Needs a different style, the Protomaps schema is not OpenMapTiles.
 - [ ] Second-level boundaries outside the US (districts, counties elsewhere), geoBoundaries ADM2 is the likely source
