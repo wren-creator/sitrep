@@ -143,6 +143,11 @@ main { position: relative; }
 .air-key span { width: 26px; border-top: 3px dashed; }
 .air-key span.dotted { border-top-style: dotted; }
 
+/* Weather legend (scoped under .air-key, whose span rule would otherwise stretch these) */
+.air-key .wx-dot { width: 12px; height: 12px; border: 1px solid #0b0f14; border-radius: 50%; flex: none; }
+.air-key .wx-line { width: 8px; height: 4px; border: 0; flex: none; margin-right: -6px; border-radius: 2px; }
+.air-key .wx-dash { width: 26px; flex: none; border-top: 3px dashed; }
+
 /* Trips */
 .hdr-btn { background: #16303f; color: #8fc1ff; border: 1px solid #2a4a63; border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
 .hdr-btn:hover { background: #1b3a4d; }

@@ -150,6 +150,12 @@ def plugin_status():
             "state": rows}
 
 
+def _public(f: dict) -> dict:
+    """A feature without its private `_shape` (weather cones and areas), which only /api/weather serves."""
+    f["properties"].pop("_shape", None)
+    return f
+
+
 @app.get("/api/features")
 def features(layers: str = "", limit: int = 2000):
     wanted = [x for x in layers.split(",") if x]
@@ -160,7 +166,7 @@ def features(layers: str = "", limit: int = 2000):
         args = wanted
     with db() as c:
         rows = c.execute(sql + " LIMIT ?", (*args, limit)).fetchall()
-    return {"type": "FeatureCollection", "features": [json.loads(r["json"]) for r in rows]}
+    return {"type": "FeatureCollection", "features": [_public(json.loads(r["json"])) for r in rows]}
 
 
 @app.get("/api/headlines")
@@ -175,9 +181,25 @@ def headlines(west: float = Query(-180), south: float = Query(-90),
             f"AND lat BETWEEN ? AND ? AND {lon_clause}",
             (south, north, west, east),
         ).fetchall()
-    items = [json.loads(r["json"])["properties"] | {"_geo": json.loads(r["json"])["geometry"]} for r in rows]
+    items = [_public(f)["properties"] | {"_geo": f["geometry"]} for f in (json.loads(r["json"]) for r in rows)]
     items.sort(key=lambda p: (SEV_RANK.get(p["severity"], 0), p.get("timestamp") or ""), reverse=True)
     return {"items": items[:limit], "total": len(items)}
+
+
+@app.get("/api/weather")
+def weather():
+    """Storm cones and tracks, development areas and heavy rain areas as one FeatureCollection for the map.
+    Each shape carries its parent's id and severity, and `part` says what it is (cone, track, fcst, warning...)."""
+    with db() as c:
+        rows = c.execute("SELECT json FROM features WHERE layer = 'weather'").fetchall()
+        st = c.execute("SELECT name, fetched_at, ok, error FROM plugin_state WHERE name IN ('nhc', 'wpc_rain')").fetchall()
+    shapes = []
+    for r in rows:
+        p = json.loads(r["json"])["properties"]
+        for s in p.get("_shape", []):
+            shapes.append({"type": "Feature", "geometry": s["geometry"],
+                           "properties": {**s["properties"], "id": p["id"], "severity": p["severity"], "kind": p["kind"]}})
+    return {"type": "FeatureCollection", "features": shapes, "sources": [dict(r) for r in st]}
 
 
 @app.get("/api/travel-info")

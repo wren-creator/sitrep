@@ -1,4 +1,4 @@
-const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories', lgbt: 'LGBT+ index', airspace: '✈ Airspace', aircraft: '✈ Aircraft (live)', military: 'Military aircraft' };
+const LAYER_LABELS = { disaster: 'Disasters', unrest: 'Unrest', conflict: 'Conflict', aviation: 'Flights', health: 'Health', embassy: '★ US embassies', advisory: 'Advisories', lgbt: 'LGBT+ index', airspace: '✈ Airspace', aircraft: '✈ Aircraft (live)', military: 'Military aircraft', weather: '🌀 Weather' };
 const SEV_COLOR = { low: '#4aa3ff', medium: '#f2c14e', high: '#ff8a3d', critical: '#ff4d4d' };
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
 
@@ -609,7 +609,7 @@ function addFeatureLayers() {
 }
 
 // Markers that win a click over the country card underneath them. Aircraft layers exist only once aircraft.js has run.
-const MARKER_LAYERS = ['sitrep-dot', 'sitrep-embassy', 'sitrep-aircraft', 'sitrep-military', 'sitrep-ac-alert', 'sitrep-ac-selected'];
+const MARKER_LAYERS = ['sitrep-dot', 'sitrep-embassy', 'sitrep-wx-storm', 'sitrep-wx-rain', 'sitrep-wx-outlook', 'sitrep-aircraft', 'sitrep-military', 'sitrep-ac-alert', 'sitrep-ac-selected'];
 function markerUnder(point) {
   const layers = MARKER_LAYERS.filter((id) => map.getLayer(id));
   return layers.length ? map.queryRenderedFeatures(point, { layers }).length : 0;
@@ -717,8 +717,9 @@ function applyLayerFilter() {
   const notHidden = state.hidden.size ? [['!', ['in', ['get', 'layer'], ['literal', [...state.hidden]]]]] : [];
   const isEmbassy = ['==', ['get', 'layer'], 'embassy'];
   const setFilter = (id, ...parts) => map.getLayer(id) && map.setFilter(id, ['all', ...parts, ...notHidden]);
-  setFilter('sitrep-glow', ['!', isEmbassy]);
-  setFilter('sitrep-dot', ['!', isEmbassy]);
+  const isWeather = ['==', ['get', 'layer'], 'weather'];  // weather draws its own storm markers and areas (weather.js)
+  setFilter('sitrep-glow', ['!', isEmbassy], ['!', isWeather]);
+  setFilter('sitrep-dot', ['!', isEmbassy], ['!', isWeather]);
   setFilter('sitrep-embassy', isEmbassy);
 }
 
@@ -747,6 +748,7 @@ function renderLayers() {
         setLgbtVisible(cb.checked);
       }
       if (layer === 'airspace') setAirspaceVisible(cb.checked);
+      if (layer === 'weather') setWeatherVisible(cb.checked);
       if (layer === 'aircraft' || layer === 'military') setAircraftVisible(layer, cb.checked);
       if (layer === 'advisory' || layer === 'lgbt') renderLayers();           // keep both checkboxes honest
       applyLayerFilter();

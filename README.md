@@ -20,7 +20,7 @@ Open http://localhost:8765 (set `SITREP_PORT` to change it). Log is `data/server
 - `backend/plugins/`: one file per data source.
 - If a source fails, its last good data stays and `/api/plugins` reports the error. Stale but labeled beats blank.
 
-Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/airspace`, `/api/aircraft`, `/api/aircraft/watch`, `/api/aircraft/route`, `/api/trips`, `/api/alerts`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
+Endpoints: `/api/features`, `/api/headlines?west&south&east&north`, `/api/advisories`, `/api/airspace`, `/api/aircraft`, `/api/aircraft/watch`, `/api/aircraft/route`, `/api/weather`, `/api/trips`, `/api/alerts`, `/api/travel-info?iso2=`, `/api/lgbt?iso2=`, `/api/lgbt-index`, `/api/nearest-embassy?lat&lon&n`, `/api/brief?id=`, `/api/geocode?q=`, `/api/plugins`.
 
 ## Adding a data source
 
@@ -28,7 +28,7 @@ Drop a file in `backend/plugins/` with a class named `Plugin` that extends `Sitr
 
 ## Status
 
-Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest (civil) and conflict (military), US embassies, State Department travel advisories, EASA airspace bulletins.
+Live: USGS earthquakes, GDACS disasters (floods, cyclones, quakes, volcanoes, drought, wildfire), GDELT unrest (civil) and conflict (military), US embassies, State Department travel advisories, EASA airspace bulletins, and weather (NHC and CPHC tropical storms, WPC heavy rain forecasts).
 
 ### About the Unrest and Conflict layers
 
@@ -155,6 +155,22 @@ Where the data comes from and how it is used (`backend/aircraft.py`): [adsb.lol]
 
 Legends fold up when you click their title, and popups sit above them.
 
+### About the weather layer
+
+On by default. Three things, all from NOAA and all free:
+
+- **Tropical storms**, from the National Hurricane Center (Atlantic, Eastern Pacific) and the Central Pacific Hurricane Center (Hawaii). Each active storm is a ringed dot with its name, coloured by strength. Around it: the forecast **cone** (white), the forecast **track** (dashed) with the forecast wind at each day, where it has **been** (dotted), and **watches and warnings** along the coast (yellow tropical storm watch, blue warning, pink hurricane watch, red warning). Click for wind, pressure, movement and a link to the full advisory and forecast discussion.
+- **Areas where a storm may form**, NHC's seven-day outlook: dashed yellow, orange or red blobs with the chance of formation in 2 and 7 days. Nothing has formed yet, and these move around from one update to the next.
+- **Heavy rain**, the Weather Prediction Center's Excessive Rainfall Outlook for days 1 to 5. This is what shows a big coastal storm (a nor'easter) building days ahead as a flood risk over the region. Only Slight (15%) and worse are kept, Marginal is a 1 in 20 chance and would bury the map.
+
+How to read it, and what it is not:
+- **The cone is where the centre is expected to go about two thirds of the time. It is not the size of the storm.** Wind, surge and rain reach well outside it, and the popup says so.
+- **The rain layer says where flooding rain is forecast, not what is causing it.** It does not show wind or snow, so a nor'easter's wind and coastal flooding are not here yet, see the roadmap.
+- Tropical cyclones outside NHC's areas (West Pacific typhoons, Indian Ocean) are not in this layer, the Disasters layer carries those through GDACS.
+- This is a map, not a warning service. Read the advisory before you act on it.
+
+Where it comes from (`backend/plugins/nhc.py`, `backend/plugins/wpc_rain.py`): NOAA's public map services and `CurrentStorms.json`. Both plugins look layer ids up by name each refresh, since NOAA renumbers them when it reworks a service, and fail loudly if a name is missing rather than showing half a storm. NHC refreshes every 30 minutes and WPC every hour, the requests are spaced 0.3 seconds apart, and if a source fails its last good data stays and the legend says so. Shapes ride in each feature's private `_shape` and are served by `/api/weather`, stripped from `/api/features` and `/api/headlines`.
+
 ### About the embassy stars
 
 Every operating US embassy is a gold star. Click one for the address, phone numbers, the embassy website and the State Department's 24/7 lines (+1 202-501-4444 from abroad, 1-888-407-4747 from the US or Canada). The card at the top of the sidebar shows the nearest operating embassy to the middle of the map. That distance is straight-line, not a route, so a river, a border or a closed road can make the real trip much longer.
@@ -192,6 +208,9 @@ Where it comes from and what to distrust:
 - [ ] Trip alerts beyond the app: push, email or Slack, and a per-trip choice of which changes matter
 - [ ] "Add to trip" straight from a country card or embassy popup on the map, and dragging stops into order
 - [ ] Elections and currency in the trip briefing, once those layers exist, with the trip dates deciding what counts as "during your stay"
+- [x] Weather: tropical storms with cone, track and warnings (NHC, CPHC), storm formation areas, heavy rain forecast days 1 to 5 (WPC)
+- [ ] Weather: National Weather Service alerts (coastal flood, high wind, gale and storm warnings, winter storms) as polygons. Most alerts have no geometry of their own, so this needs their zone shapes. This is the missing half of a nor'easter
+- [ ] Weather: WPC forecast low pressure centres and heavy snow areas, and a storm near a saved trip stop as a trip alert
 - [ ] Per-city traffic (TomTom/HERE free tiers)
 - [ ] Self-host the basemap (Protomaps PMTiles, about 15 GB for North America) so it runs offline. Needs a different style, the Protomaps schema is not OpenMapTiles.
 - [ ] Second-level boundaries outside the US (districts, counties elsewhere), geoBoundaries ADM2 is the likely source
