@@ -157,19 +157,21 @@ Legends fold up when you click their title, and popups sit above them.
 
 ### About the weather layer
 
-On by default. Three things, all from NOAA and all free:
+On by default. Four things, all from NOAA and all free:
 
 - **Tropical storms**, from the National Hurricane Center (Atlantic, Eastern Pacific) and the Central Pacific Hurricane Center (Hawaii). Each active storm is a ringed dot with its name, coloured by strength. Around it: the forecast **cone** (white), the forecast **track** (dashed) with the forecast wind at each day, where it has **been** (dotted), and **watches and warnings** along the coast (yellow tropical storm watch, blue warning, pink hurricane watch, red warning). Click for wind, pressure, movement and a link to the full advisory and forecast discussion.
 - **Areas where a storm may form**, NHC's seven-day outlook: dashed yellow, orange or red blobs with the chance of formation in 2 and 7 days. Nothing has formed yet, and these move around from one update to the next.
+- **National Weather Service watches and warnings** for the wind, water and snow side of a storm: storm, gale and hurricane force wind warnings at sea, high wind, coastal flood, storm surge, winter storm, blizzard, flash flood and hazardous seas. Solid outline is a warning (happening or expected), dashed is a watch (possible). This is the wind and coastal flooding of a nor'easter, and the rain layer below is its rain.
 - **Heavy rain**, the Weather Prediction Center's Excessive Rainfall Outlook for days 1 to 5. This is what shows a big coastal storm (a nor'easter) building days ahead as a flood risk over the region. Only Slight (15%) and worse are kept, Marginal is a 1 in 20 chance and would bury the map.
 
 How to read it, and what it is not:
 - **The cone is where the centre is expected to go about two thirds of the time. It is not the size of the storm.** Wind, surge and rain reach well outside it, and the popup says so.
-- **The rain layer says where flooding rain is forecast, not what is causing it.** It does not show wind or snow, so a nor'easter's wind and coastal flooding are not here yet, see the roadmap.
+- **The rain layer says where flooding rain is forecast, not what is causing it.** Wind, coastal flooding and snow come from the alert layer instead, and the two together are what a nor'easter looks like on this map.
+- **Alert shapes are simplified to about 5 km and grouped by type and 10 degree region**, so the sidebar shows "Coastal Flood Warning, 48 areas, around 38°N 76°W" and not 48 rows. The position in the title is the mean of the zones and can land at sea, the polygons are the truth. Advisories (small craft, fog, frost, surf), statements and river flood alerts are left out on purpose, and tropical storm and hurricane watches are not repeated because the storm's own lines already show them. Read the alert text at alerts.weather.gov for your exact location.
 - Tropical cyclones outside NHC's areas (West Pacific typhoons, Indian Ocean) are not in this layer, the Disasters layer carries those through GDACS.
 - This is a map, not a warning service. Read the advisory before you act on it.
 
-Where it comes from (`backend/plugins/nhc.py`, `backend/plugins/wpc_rain.py`): NOAA's public map services and `CurrentStorms.json`. Both plugins look layer ids up by name each refresh, since NOAA renumbers them when it reworks a service, and fail loudly if a name is missing rather than showing half a storm. NHC refreshes every 30 minutes and WPC every hour, the requests are spaced 0.3 seconds apart, and if a source fails its last good data stays and the legend says so. Shapes ride in each feature's private `_shape` and are served by `/api/weather`, stripped from `/api/features` and `/api/headlines`.
+Where it comes from (`backend/plugins/nhc.py`, `backend/plugins/wpc_rain.py`, `backend/plugins/nws_alerts.py`): NOAA's public map services and `CurrentStorms.json`. The alerts come from NOAA's WWA map service, which publishes every active alert already drawn as polygons. api.weather.gov alerts mostly carry a list of zones and no shape, which would take hundreds of extra requests, so it is not used. Both plugins look layer ids up by name each refresh, since NOAA renumbers them when it reworks a service, and fail loudly if a name is missing rather than showing half a storm. NHC refreshes every 30 minutes, WPC every hour and alerts every 10 minutes (they change fast in a storm), the requests are spaced 0.3 seconds apart, and if a source fails its last good data stays and the legend says so. Shapes ride in each feature's private `_shape` and are served by `/api/weather`, stripped from `/api/features` and `/api/headlines`.
 
 ### About the embassy stars
 
@@ -209,8 +211,8 @@ Where it comes from and what to distrust:
 - [ ] "Add to trip" straight from a country card or embassy popup on the map, and dragging stops into order
 - [ ] Elections and currency in the trip briefing, once those layers exist, with the trip dates deciding what counts as "during your stay"
 - [x] Weather: tropical storms with cone, track and warnings (NHC, CPHC), storm formation areas, heavy rain forecast days 1 to 5 (WPC)
-- [ ] Weather: National Weather Service alerts (coastal flood, high wind, gale and storm warnings, winter storms) as polygons. Most alerts have no geometry of their own, so this needs their zone shapes. This is the missing half of a nor'easter
-- [ ] Weather: WPC forecast low pressure centres and heavy snow areas, and a storm near a saved trip stop as a trip alert
+- [x] Weather: National Weather Service watches and warnings (wind, coastal flood, storm surge, winter storm, flash flood, seas) as polygons
+- [ ] Weather: WPC forecast low pressure centres and heavy snow areas, a way to name a system ("nor'easter") which no feed here does, alert text in the popup, and a place name for each alert group instead of coordinates, and a storm near a saved trip stop as a trip alert
 - [ ] Per-city traffic (TomTom/HERE free tiers)
 - [ ] Self-host the basemap (Protomaps PMTiles, about 15 GB for North America) so it runs offline. Needs a different style, the Protomaps schema is not OpenMapTiles.
 - [ ] Second-level boundaries outside the US (districts, counties elsewhere), geoBoundaries ADM2 is the likely source

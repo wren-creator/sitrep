@@ -9,15 +9,18 @@
 //   - the thick coloured lines on the coast are watches and warnings
 //   - a dashed yellow, orange or red blob is an area NHC expects a storm to form in, and the chance it will
 //   - a blue or purple area is forecast heavy rain that could flood (Slight risk or worse, days 1 to 5)
+//   - orange, teal, pale blue, green and violet areas are National Weather Service watches and warnings for wind,
+//     coastal flood, winter storm, flash flood and rough seas. Dashed outline means a watch (possible), solid a warning
 
 const WX_SEV = { low: '#f2c14e', medium: '#ff9f43', high: '#ff4d4d', critical: '#ff4d4d' };   // outlook areas
 const WX_RAIN = { medium: '#3b82f6', high: '#8b5cf6', critical: '#ec4899' };
+const WX_ALERT = { wind: '#ff9f43', coastal: '#2dd4bf', winter: '#bfdbfe', flash: '#22c55e', seas: '#a78bfa' };
 const WX_WW = { TWA: '#ffe066', TWR: '#3b82f6', HWA: '#ff8fd1', HWR: '#ff3b30' };
 const WX_WW_TEXT = { TWA: 'Tropical storm watch', TWR: 'Tropical storm warning', HWA: 'Hurricane watch', HWR: 'Hurricane warning' };
 const WX_CAT = ['#6ec1ff', '#ffe066', '#ffb347', '#ff7a45', '#ff3b30', '#d63384'];   // tropical storm, then Category 1 to 5
-const WX_LAYERS = ['sitrep-wx-rain', 'sitrep-wx-rain-line', 'sitrep-wx-outlook', 'sitrep-wx-outlook-line', 'sitrep-wx-cone', 'sitrep-wx-cone-line',
+const WX_LAYERS = ['sitrep-wx-alert', 'sitrep-wx-alert-line', 'sitrep-wx-alert-watch', 'sitrep-wx-rain', 'sitrep-wx-rain-line', 'sitrep-wx-outlook', 'sitrep-wx-outlook-line', 'sitrep-wx-cone', 'sitrep-wx-cone-line',
   'sitrep-wx-past', 'sitrep-wx-track', 'sitrep-wx-ww', 'sitrep-wx-fcst', 'sitrep-wx-fcst-label', 'sitrep-wx-storm', 'sitrep-wx-storm-label'];
-const WX_CLICK = ['sitrep-wx-rain', 'sitrep-wx-outlook'];
+const WX_CLICK = ['sitrep-wx-alert', 'sitrep-wx-rain', 'sitrep-wx-outlook'];
 
 const wxIs = (part) => ['==', ['get', 'part'], part];
 
@@ -29,6 +32,11 @@ function addWeatherLayers() {
   const rainColor = ['match', ['get', 'severity'], 'critical', WX_RAIN.critical, 'high', WX_RAIN.high, WX_RAIN.medium];
   const outlookColor = ['match', ['get', 'severity'], 'high', WX_SEV.high, 'medium', WX_SEV.medium, WX_SEV.low];
 
+  const alertColor = ['match', ['get', 'group'], ...Object.entries(WX_ALERT).flat(), '#ff9f43'];
+  const isAlert = wxIs('alert');
+  add({ id: 'sitrep-wx-alert', type: 'fill', filter: isAlert, paint: { 'fill-color': alertColor, 'fill-opacity': 0.2 } });
+  add({ id: 'sitrep-wx-alert-line', type: 'line', filter: ['all', isAlert, ['==', ['get', 'watch'], false]], paint: { 'line-color': alertColor, 'line-width': 1.4, 'line-opacity': 0.9 } });
+  add({ id: 'sitrep-wx-alert-watch', type: 'line', filter: ['all', isAlert, ['==', ['get', 'watch'], true]], paint: { 'line-color': alertColor, 'line-width': 1.4, 'line-dasharray': [2, 1.6] } });
   add({ id: 'sitrep-wx-rain', type: 'fill', filter: wxIs('rain'), paint: { 'fill-color': rainColor, 'fill-opacity': 0.24 } });
   add({ id: 'sitrep-wx-rain-line', type: 'line', filter: wxIs('rain'), paint: { 'line-color': rainColor, 'line-width': 1.6, 'line-opacity': 0.85 } });
   add({ id: 'sitrep-wx-outlook', type: 'fill', filter: wxIs('outlook'), paint: { 'fill-color': outlookColor, 'fill-opacity': 0.16 } });
@@ -74,6 +82,7 @@ function addWeatherLayers() {
 const WX_NOTE = {
   storm: 'The white cone is where the centre is expected to go about two thirds of the time. It is not the size of the storm, wind, surge and rain reach well outside it. Dashed line: forecast track and the forecast wind each day. Dotted line: where it has been.',
   outlook: 'Nothing has formed yet. The shaded area is where the National Hurricane Center expects a storm to form, and the percentage is its chance of doing so. Forecasts this far out change often.',
+  alert: 'These are National Weather Service watches and warnings, grouped by type and region. A warning means it is happening or expected, a watch means it is possible. Zones are drawn simplified, so edges are approximate. Read the alert text at alerts.weather.gov for your exact location.',
   rain: 'This is where flash flooding is forecast to be a risk. It does not say what is causing the rain, and does not cover wind or snow.',
 };
 
@@ -120,11 +129,12 @@ function renderWeatherLegend() {
   if (has('cone')) rows.push(`<div class="air-key">${dot('#fff')}Storm and its forecast cone (centre only)</div>`);
   if (has('warning')) rows.push(`<div class="air-key">${Object.entries(WX_WW).map(([k, c]) => line(c) ).join('')}Watches and warnings (yellow, blue, pink, red)</div>`);
   if (has('outlook')) rows.push(`<div class="air-key"><span class="wx-dash" style="border-color:${WX_SEV.high}"></span>Area where a storm may form</div>`);
+  if (has('alert')) rows.push(`<div class="air-key">${Object.values(WX_ALERT).map((c) => dot(c)).join('')}NWS wind, coastal flood, winter, flash flood, seas (dashed: watch)</div>`);
   if (has('rain')) rows.push(`<div class="air-key">${dot(WX_RAIN.medium)}Heavy rain, flood risk (days 1 to 5)</div>`);
   const lastFetch = Math.min(...(state.weather.sources || []).map((s) => s.fetched_at || 0));
   const stale = (state.weather.sources || []).some((s) => !s.ok);
   box.innerHTML = `<div class="lg-legend-title">🌀 Weather</div>${rows.join('')}
-    <div class="lg-legend-note">${stale ? '<span class="pop-warn">A weather source is failing, showing its last good data.</span> ' : ''}Forecasts change, and this is a map, not a warning service. Read the full advisory before you act on it. Sources: <a href="https://www.nhc.noaa.gov" target="_blank" rel="noopener noreferrer">NHC</a>, <a href="https://www.wpc.ncep.noaa.gov/qpf/excessive_rainfall_outlook_ero.php" target="_blank" rel="noopener noreferrer">WPC</a> (NOAA).
+    <div class="lg-legend-note">${stale ? '<span class="pop-warn">A weather source is failing, showing its last good data.</span> ' : ''}Forecasts change, and this is a map, not a warning service. Read the full advisory before you act on it. Sources: <a href="https://www.nhc.noaa.gov" target="_blank" rel="noopener noreferrer">NHC</a>, <a href="https://alerts.weather.gov" target="_blank" rel="noopener noreferrer">NWS</a>, <a href="https://www.wpc.ncep.noaa.gov/qpf/excessive_rainfall_outlook_ero.php" target="_blank" rel="noopener noreferrer">WPC</a> (NOAA).
     ${lastFetch ? `Checked ${new Date(lastFetch * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : ''}</div>`;
 }
 
