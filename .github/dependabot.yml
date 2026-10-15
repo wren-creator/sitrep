@@ -1,0 +1,12 @@
+# Dependabot version updates. Weekly; minor and patch bumps grouped into one PR,
+# major bumps arrive separately so they can be tested on purpose.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
