@@ -1,9 +1,4 @@
 .venv/
 __pycache__/
 *.pyc
-data/*.db
-data/*.log
-data/*.pid
-data/embassies_raw.json
-data/state_dept_raw.json
-data/easa_czib.json
+/data/
