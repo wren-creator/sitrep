@@ -230,6 +230,10 @@ Where it comes from and what to distrust:
 
 Safety information about people is subjective and uneven. City and countryside can be worlds apart, so this shows sources and dates rather than a single score. Check each source's terms before relying on it, and confirm health and entry requirements with the CDC or the embassy before you fly.
 
+## License
+
+The code is released under the [GNU General Public License v3.0](LICENSE). The data it shows comes from the sources below and stays under their own terms, which the GPL does not change.
+
 ## Data credits
 
 - Basemap tiles: [OpenFreeMap](https://openfreemap.org), OpenMapTiles schema, data from OpenStreetMap contributors. The map needs internet for now.
